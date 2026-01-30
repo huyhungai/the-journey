@@ -88,17 +88,41 @@ Track balance across:
 
 ## Installation
 
-### From Obsidian Community Plugins (Recommended)
-1. Open Obsidian Settings
-2. Go to Community Plugins
-3. Search for "The Journey"
-4. Click Install, then Enable
+> **Note**: The Journey is currently under review for the Obsidian Community Plugins directory. For now, please use manual installation.
 
-### Manual Installation
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/huyhungai/the-journey/releases)
-2. Create folder: `<vault>/.obsidian/plugins/the-journey/`
-3. Copy the downloaded files into this folder
-4. Enable the plugin in Obsidian Settings > Community Plugins
+### Manual Installation (Current Method)
+
+**Step 1: Download Plugin Files**
+1. Go to the [latest release](https://github.com/huyhungai/the-journey/releases/latest)
+2. Download these 3 files:
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
+
+**Step 2: Install in Your Vault**
+1. Open your Obsidian vault folder in file explorer
+2. Navigate to the `.obsidian/plugins/` folder
+   - If the `plugins` folder doesn't exist, create it
+3. Create a new folder named `the-journey`
+4. Place the 3 downloaded files inside: `.obsidian/plugins/the-journey/`
+
+**Step 3: Enable the Plugin**
+1. Open Obsidian
+2. Go to Settings → Community Plugins
+3. Turn off "Restricted Mode" if it's enabled
+4. Click "Browse" or reload the plugins list
+5. Find "The Journey" and toggle it ON
+
+**For Mobile (iOS/Android)**
+- If you sync your vault (iCloud, Dropbox, Obsidian Sync), the plugin files will sync automatically
+- Enable the plugin in Settings → Community Plugins on your mobile device
+- AI features require internet connection and API keys
+
+### From Community Plugins (Coming Soon)
+Once approved, you'll be able to install directly:
+1. Open Obsidian Settings → Community Plugins
+2. Search for "The Journey"
+3. Click Install, then Enable
 
 ## Getting Started
 
