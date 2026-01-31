@@ -613,12 +613,58 @@ const ACTIVITY_CATEGORIES = [
 // BOSS FIGHT SYSTEM - Long-term Goals as Bosses
 // ============================================================================
 const BOSS_TEMPLATES = [
-    { id: 'lazy_dragon', name: '🐉 The Lazy Dragon', desc: 'Defeat procrastination and build discipline', domain: 'timeUse', baseHp: 100 },
-    { id: 'fog_giant', name: '🌫️ The Fog Giant', desc: 'Clear mental fog and gain clarity', domain: 'psychologicalWellbeing', baseHp: 100 },
-    { id: 'sloth_beast', name: '🦥 The Sloth Beast', desc: 'Overcome sedentary lifestyle', domain: 'health', baseHp: 100 },
-    { id: 'debt_demon', name: '💸 The Debt Demon', desc: 'Conquer financial challenges', domain: 'livingStandards', baseHp: 150 },
-    { id: 'isolation_wraith', name: '👻 The Isolation Wraith', desc: 'Break free from social isolation', domain: 'communityVitality', baseHp: 80 },
-    { id: 'ignorance_golem', name: '🗿 The Ignorance Golem', desc: 'Defeat ignorance through learning', domain: 'education', baseHp: 120 }
+    // Productivity & Time
+    { id: 'lazy_dragon', name: '🐉 The Lazy Dragon', desc: 'Defeat procrastination', domain: 'timeUse', baseHp: 100, category: 'productivity' },
+    { id: 'distraction_hydra', name: '🐙 Distraction Hydra', desc: 'Stop endless scrolling', domain: 'timeUse', baseHp: 120, category: 'productivity' },
+    { id: 'perfectionism_titan', name: '⚡ Perfectionism Titan', desc: 'Ship work, not perfect', domain: 'timeUse', baseHp: 80, category: 'productivity' },
+
+    // Mental Health
+    { id: 'fog_giant', name: '🌫️ The Fog Giant', desc: 'Clear mental fog', domain: 'psychologicalWellbeing', baseHp: 100, category: 'mind' },
+    { id: 'anxiety_specter', name: '😰 Anxiety Specter', desc: 'Manage anxiety', domain: 'psychologicalWellbeing', baseHp: 120, category: 'mind' },
+    { id: 'imposter_shadow', name: '🎭 Imposter Shadow', desc: 'Overcome self-doubt', domain: 'psychologicalWellbeing', baseHp: 80, category: 'mind' },
+    { id: 'burnout_phoenix', name: '🔥 Burnout Phoenix', desc: 'Recover from exhaustion', domain: 'psychologicalWellbeing', baseHp: 150, category: 'mind' },
+
+    // Health & Body
+    { id: 'sloth_beast', name: '🦥 The Sloth Beast', desc: 'Get active lifestyle', domain: 'health', baseHp: 100, category: 'body' },
+    { id: 'sugar_serpent', name: '🍬 Sugar Serpent', desc: 'Break sugar addiction', domain: 'health', baseHp: 80, category: 'body' },
+    { id: 'insomnia_wraith', name: '🌙 Insomnia Wraith', desc: 'Fix sleep schedule', domain: 'health', baseHp: 100, category: 'body' },
+    { id: 'junk_golem', name: '🍔 Junk Food Golem', desc: 'Eat healthy', domain: 'health', baseHp: 120, category: 'body' },
+
+    // Career & Work
+    { id: 'career_chimera', name: '💼 Career Chimera', desc: 'New job or promotion', domain: 'livingStandards', baseHp: 150, category: 'career' },
+    { id: 'project_kraken', name: '🦑 Project Kraken', desc: 'Complete big project', domain: 'livingStandards', baseHp: 100, category: 'career' },
+    { id: 'skill_gap_void', name: '🕳️ Skill Gap Void', desc: 'Learn new skill', domain: 'education', baseHp: 120, category: 'career' },
+
+    // Finance
+    { id: 'debt_demon', name: '💸 Debt Demon', desc: 'Pay off debt', domain: 'livingStandards', baseHp: 150, category: 'finance' },
+    { id: 'spending_vampire', name: '🧛 Spending Vampire', desc: 'Stop impulse buying', domain: 'livingStandards', baseHp: 80, category: 'finance' },
+    { id: 'income_ceiling', name: '📊 Income Ceiling', desc: 'Increase income', domain: 'livingStandards', baseHp: 200, category: 'finance' },
+
+    // Relationships & Social
+    { id: 'isolation_wraith', name: '👻 Isolation Wraith', desc: 'Connect with people', domain: 'communityVitality', baseHp: 80, category: 'social' },
+    { id: 'conflict_cerberus', name: '🐕 Conflict Cerberus', desc: 'Resolve conflicts', domain: 'communityVitality', baseHp: 100, category: 'social' },
+    { id: 'networking_sphinx', name: '🦁 Networking Sphinx', desc: 'Build connections', domain: 'communityVitality', baseHp: 100, category: 'social' },
+
+    // Learning & Growth
+    { id: 'ignorance_golem', name: '🗿 Ignorance Golem', desc: 'Master new subject', domain: 'education', baseHp: 120, category: 'learning' },
+    { id: 'language_barrier', name: '🗣️ Language Barrier', desc: 'Learn a language', domain: 'education', baseHp: 200, category: 'learning' },
+    { id: 'creative_block', name: '🎨 Creative Block', desc: 'Unlock creativity', domain: 'culturalEngagement', baseHp: 80, category: 'learning' },
+
+    // Life Goals
+    { id: 'clutter_colossus', name: '📦 Clutter Colossus', desc: 'Declutter space', domain: 'environmentQuality', baseHp: 100, category: 'life' },
+    { id: 'habit_hydra', name: '🐲 Habit Hydra', desc: 'Build new habit', domain: 'timeUse', baseHp: 100, category: 'life' },
+    { id: 'fear_dragon', name: '😱 Fear Dragon', desc: 'Face and conquer fear', domain: 'psychologicalWellbeing', baseHp: 80, category: 'life' }
+];
+
+const BOSS_CATEGORIES = [
+    { id: 'productivity', name: '⏰ Productivity', color: '#3498db' },
+    { id: 'mind', name: '🧠 Mental Health', color: '#9b59b6' },
+    { id: 'body', name: '💪 Health & Body', color: '#27ae60' },
+    { id: 'career', name: '💼 Career', color: '#e67e22' },
+    { id: 'finance', name: '💰 Finance', color: '#f1c40f' },
+    { id: 'social', name: '👥 Social', color: '#e74c3c' },
+    { id: 'learning', name: '📚 Learning', color: '#1abc9c' },
+    { id: 'life', name: '🌟 Life Goals', color: '#95a5a6' }
 ];
 
 // ============================================================================
@@ -1068,6 +1114,110 @@ function getContextualWisdom(settings) {
     if (phase === 'discovery') return getRandomWisdom('flow') || getRandomWisdom('challenge');
 
     return getRandomWisdom();
+}
+
+// HUMAN 3.0 Wisdom - Dynamic wisdom based on current state
+const HUMAN30_WISDOM = {
+    // By Development Tier
+    tier: {
+        '1.0': [
+            { text: "The first step to freedom is recognizing you've been running on autopilot.", category: "Awakening", source: "HUMAN 1.0" },
+            { text: "Question every 'should' and 'must' that wasn't chosen by you.", category: "Self-Awareness", source: "HUMAN 1.0" },
+            { text: "You are not your habits. You are the one who can change them.", category: "Identity", source: "HUMAN 1.0" },
+            { text: "The NPC follows the script. The player writes their own.", category: "Choice", source: "HUMAN 1.0" },
+            { text: "Awareness is the first superpower. Notice what you do without thinking.", category: "Mindfulness", source: "HUMAN 1.0" }
+        ],
+        '2.0': [
+            { text: "You've taken control of the game. Now master its mechanics.", category: "Mastery", source: "HUMAN 2.0" },
+            { text: "Every skill you build is a tool for creating your reality.", category: "Skills", source: "HUMAN 2.0" },
+            { text: "The player experiments, fails, learns, and levels up.", category: "Growth", source: "HUMAN 2.0" },
+            { text: "Your comfort zone is a beautiful place, but nothing grows there.", category: "Challenge", source: "HUMAN 2.0" },
+            { text: "Flow state is where hours feel like minutes and growth feels like play.", category: "Flow", source: "HUMAN 2.0" }
+        ],
+        '3.0': [
+            { text: "The creator doesn't just play the game—they design new ones.", category: "Creation", source: "HUMAN 3.0" },
+            { text: "Your mastery now serves something greater than yourself.", category: "Purpose", source: "HUMAN 3.0" },
+            { text: "Legacy is built by those who create paths for others to walk.", category: "Legacy", source: "HUMAN 3.0" },
+            { text: "At this level, your growth accelerates the growth of everyone around you.", category: "Impact", source: "HUMAN 3.0" },
+            { text: "The architect sees systems where others see chaos.", category: "Wisdom", source: "HUMAN 3.0" }
+        ]
+    },
+    // By Phase
+    phase: {
+        dissonance: [
+            { text: "Discomfort is data. It's telling you something needs to change.", category: "Dissonance Phase", source: "Phase Wisdom" },
+            { text: "The tension you feel is the gap between who you are and who you could be.", category: "Dissonance Phase", source: "Phase Wisdom" },
+            { text: "Chaos precedes transformation. Embrace the dissonance.", category: "Dissonance Phase", source: "Phase Wisdom" }
+        ],
+        uncertainty: [
+            { text: "In the fog of uncertainty, every step forward is an act of courage.", category: "Uncertainty Phase", source: "Phase Wisdom" },
+            { text: "Not knowing is not weakness—it's the beginning of discovery.", category: "Uncertainty Phase", source: "Phase Wisdom" },
+            { text: "The path reveals itself to those who start walking.", category: "Uncertainty Phase", source: "Phase Wisdom" }
+        ],
+        discovery: [
+            { text: "You're in the zone. Ride the wave and let momentum carry you.", category: "Discovery Phase", source: "Phase Wisdom" },
+            { text: "Flow state unlocked. Time bends when you're aligned with purpose.", category: "Discovery Phase", source: "Phase Wisdom" },
+            { text: "This is where magic happens. Stay present and keep creating.", category: "Discovery Phase", source: "Phase Wisdom" }
+        ]
+    },
+    // By Quadrant (weakest)
+    quadrant: {
+        mind: [
+            { text: "Your mind is a garden. What you plant determines what grows.", category: "Mind Quadrant", source: "Quadrant Focus" },
+            { text: "Thoughts become beliefs, beliefs become actions, actions become destiny.", category: "Mind Quadrant", source: "Quadrant Focus" },
+            { text: "Learning is not filling a bucket but lighting a fire.", category: "Mind Quadrant", source: "Quadrant Focus" }
+        ],
+        body: [
+            { text: "Your body is your vehicle through life. Maintain it well.", category: "Body Quadrant", source: "Quadrant Focus" },
+            { text: "Energy management is life management. Protect your vitality.", category: "Body Quadrant", source: "Quadrant Focus" },
+            { text: "Movement is medicine. The body was made to move.", category: "Body Quadrant", source: "Quadrant Focus" }
+        ],
+        spirit: [
+            { text: "Connection is not a luxury—it's a fundamental human need.", category: "Spirit Quadrant", source: "Quadrant Focus" },
+            { text: "Meaning emerges from contribution to something beyond yourself.", category: "Spirit Quadrant", source: "Quadrant Focus" },
+            { text: "We rise by lifting others. Community is strength.", category: "Spirit Quadrant", source: "Quadrant Focus" }
+        ],
+        vocation: [
+            { text: "Your work is your signature on the world. Make it count.", category: "Vocation Quadrant", source: "Quadrant Focus" },
+            { text: "Find the intersection of what you love, what you're good at, and what the world needs.", category: "Vocation Quadrant", source: "Quadrant Focus" },
+            { text: "Build systems that work while you sleep. Leverage is freedom.", category: "Vocation Quadrant", source: "Quadrant Focus" }
+        ]
+    }
+};
+
+// Get wisdom based on HUMAN 3.0 framework state
+function getHuman30Wisdom(settings) {
+    const devLevel = getDevelopmentLevel(settings.level || 1);
+    const currentPhase = determinePhase(settings);
+    const quadrantScores = calculateQuadrantScores(settings.domains || []);
+
+    // Find weakest quadrant
+    let weakestQuadrant = 'mind';
+    let lowestScore = 100;
+    for (const [qId, score] of Object.entries(quadrantScores)) {
+        if (score < lowestScore) {
+            lowestScore = score;
+            weakestQuadrant = qId;
+        }
+    }
+
+    // Randomly choose wisdom source with weighted priority
+    const rand = Math.random();
+    let wisdomPool;
+
+    if (rand < 0.4) {
+        // 40% - Based on current tier
+        wisdomPool = HUMAN30_WISDOM.tier[devLevel] || HUMAN30_WISDOM.tier['1.0'];
+    } else if (rand < 0.7) {
+        // 30% - Based on current phase
+        wisdomPool = HUMAN30_WISDOM.phase[currentPhase] || HUMAN30_WISDOM.phase.dissonance;
+    } else {
+        // 30% - Based on weakest quadrant
+        wisdomPool = HUMAN30_WISDOM.quadrant[weakestQuadrant] || HUMAN30_WISDOM.quadrant.mind;
+    }
+
+    // Return random wisdom from selected pool
+    return wisdomPool[Math.floor(Math.random() * wisdomPool.length)];
 }
 
 // Calculate psychic entropy (chaos accumulation)
@@ -2835,27 +2985,56 @@ class NewBossFightModal extends Modal {
                 dd.onChange(value => domain = value);
             });
 
-        // Boss templates
+        // Boss templates - grouped by category
         contentEl.createEl('h4', { text: '📋 Or choose a template:' });
-        const templateGrid = contentEl.createDiv({ cls: 'rpg-boss-template-grid' });
+        contentEl.createEl('p', { text: 'Click any template to use it', cls: 'rpg-modal-hint' });
 
-        BOSS_TEMPLATES.forEach(template => {
-            const templateBtn = templateGrid.createDiv({ cls: 'rpg-boss-template' });
-            templateBtn.createDiv({ text: template.name });
-            templateBtn.createDiv({ text: template.desc, cls: 'rpg-boss-template-desc' });
+        const templateContainer = contentEl.createDiv({ cls: 'rpg-boss-template-container' });
 
-            templateBtn.onclick = () => {
-                name = template.name;
-                description = template.desc;
-                maxHp = template.baseHp;
-                domain = template.domain;
+        BOSS_CATEGORIES.forEach(category => {
+            const categoryTemplates = BOSS_TEMPLATES.filter(t => t.category === category.id);
+            if (categoryTemplates.length === 0) return;
 
-                // Update fields visually
-                contentEl.querySelectorAll('input').forEach((input, idx) => {
-                    if (idx === 0) input.value = name;
-                    if (idx === 1) input.value = description;
-                });
-            };
+            const categorySection = templateContainer.createDiv({ cls: 'rpg-boss-category' });
+            categorySection.createDiv({
+                cls: 'rpg-boss-category-header',
+                text: category.name,
+                attr: { style: `border-left: 4px solid ${category.color}` }
+            });
+
+            const templateGrid = categorySection.createDiv({ cls: 'rpg-boss-template-grid' });
+
+            categoryTemplates.forEach(template => {
+                const templateBtn = templateGrid.createDiv({ cls: 'rpg-boss-template' });
+                templateBtn.innerHTML = `
+                    <div class="rpg-boss-template-icon">${template.name.split(' ')[0]}</div>
+                    <div class="rpg-boss-template-content">
+                        <div class="rpg-boss-template-name">${template.name.split(' ').slice(1).join(' ')}</div>
+                        <div class="rpg-boss-template-desc">${template.desc}</div>
+                        <div class="rpg-boss-template-hp">${template.baseHp} HP</div>
+                    </div>
+                `;
+
+                templateBtn.onclick = () => {
+                    name = template.name;
+                    description = template.desc;
+                    icon = template.name.split(' ')[0];
+                    maxHp = template.baseHp;
+                    domain = template.domain;
+
+                    // Update fields visually
+                    const inputs = contentEl.querySelectorAll('input');
+                    if (inputs[0]) inputs[0].value = name;
+                    if (inputs[1]) inputs[1].value = description;
+                    if (inputs[2]) inputs[2].value = icon;
+
+                    // Highlight selected template
+                    templateContainer.querySelectorAll('.rpg-boss-template').forEach(t => t.classList.remove('selected'));
+                    templateBtn.classList.add('selected');
+
+                    new Notice(`Selected: ${template.name}`);
+                };
+            });
         });
 
         new Setting(contentEl)
@@ -3683,8 +3862,58 @@ module.exports = class TheJourneyPlugin extends Plugin {
             // Daily Summary
             dailyStats: saved.dailyStats || {},
             // Journal Intelligence
-            journalSettings: saved.journalSettings || JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS))
+            journalSettings: saved.journalSettings || JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS)),
+            // Skills System
+            skillsSettings: saved.skillsSettings || JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS))
         };
+
+        // Migrate existing users with completed assessment to new discovery system
+        this.migrateToDiscoverySystem();
+    }
+
+    // Migrate legacy assessment data to new gradual discovery system
+    migrateToDiscoverySystem() {
+        const s = this.settings;
+        if (!s.characterProfile) return;
+
+        // Initialize discovery if not exists
+        if (!s.characterProfile.discovery) {
+            s.characterProfile.discovery = {
+                currentQuestionIndex: 0,
+                questionResponses: {},
+                discoveredDomains: [],
+                domainDataPoints: {},
+                questionsToday: 0,
+                lastQuestionDate: null,
+                skippedQuestions: []
+            };
+        }
+
+        // If user completed old assessment, migrate to new system
+        if (s.characterProfile.assessmentComplete &&
+            s.characterProfile.assessmentResponses &&
+            s.characterProfile.assessmentResponses.length > 0 &&
+            s.characterProfile.discovery.discoveredDomains.length === 0) {
+
+            const discovery = s.characterProfile.discovery;
+
+            // Convert old responses array to new format and discover all domains
+            for (const response of s.characterProfile.assessmentResponses) {
+                discovery.questionResponses[response.questionId] = response.value;
+
+                // Find domain for this question
+                for (const [domainId, questions] of Object.entries(QUESTION_BANK)) {
+                    const q = questions.find(q => q.id === response.questionId);
+                    if (q) {
+                        discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+                        if (!discovery.discoveredDomains.includes(domainId)) {
+                            discovery.discoveredDomains.push(domainId);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     async saveSettings() {
@@ -3693,6 +3922,14 @@ module.exports = class TheJourneyPlugin extends Plugin {
     }
 
     async resetAllData() {
+        // Preserve AI settings (API keys, model, provider, etc.)
+        const preservedAiSettings = this.settings.ai ? { ...this.settings.ai } : { ...DEFAULT_AI_SETTINGS };
+        // Clear chat history but keep configuration
+        preservedAiSettings.chatHistory = [];
+
+        // Preserve journal folder settings
+        const preservedJournalFolder = this.settings.journalSettings?.journalFolder || DEFAULT_JOURNAL_SETTINGS.journalFolder;
+
         this.settings = {
             level: 1, xp: 0, hp: 100, maxHp: 100, gold: 0,
             totalGoldEarned: 0, totalHabitsCompleted: 0, totalQuestsCompleted: 0,
@@ -3701,7 +3938,7 @@ module.exports = class TheJourneyPlugin extends Plugin {
             habits: [], badHabits: [], quests: [], rewards: [],
             achievements: JSON.parse(JSON.stringify(DEFAULT_ACHIEVEMENTS)),
             characterProfile: null,
-            ai: { ...DEFAULT_AI_SETTINGS },
+            ai: preservedAiSettings, // Preserve AI settings
             aiQuestsGenerated: 0,
             // HUMAN 3.0 Framework
             currentPhase: 'dissonance',
@@ -3729,11 +3966,17 @@ module.exports = class TheJourneyPlugin extends Plugin {
             // Difficulty & Daily
             gameDifficulty: 'normal',
             dailyStats: {},
-            // Journal Intelligence
-            journalSettings: JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS))
+            // Journal Intelligence - preserve folder setting
+            journalSettings: {
+                ...JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS)),
+                journalFolder: preservedJournalFolder
+            },
+            // Skills System
+            skillsSettings: JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS))
         };
         await this.saveSettings();
-        new Notice("🔄 All data has been reset!");
+        this.refreshViews(); // Refresh the JourneyView
+        new Notice("🔄 All data has been reset! (Settings preserved)");
     }
 
     checkDailyReset() {
@@ -3818,6 +4061,9 @@ module.exports = class TheJourneyPlugin extends Plugin {
 
                 // Damage bosses linked to this domain
                 this.damageBossesForDomain(domainId, 10);
+
+                // Discover domain through activity (gradual discovery)
+                this.discoverDomainFromActivity(domainId, 'quest');
             }
         }
 
@@ -4092,6 +4338,48 @@ module.exports = class TheJourneyPlugin extends Plugin {
             const bossIndex = s.bossFights.indexOf(boss);
             this.damageBoss(bossIndex, baseDamage);
         });
+
+        // Discover domain through boss fight activity (gradual discovery)
+        if (activeBosses.length > 0) {
+            this.discoverDomainFromActivity(domainId, 'boss');
+        }
+    }
+
+    // Helper to discover domain from various activities (quest, journal, boss)
+    discoverDomainFromActivity(domainId, source) {
+        const s = this.settings;
+        if (!s.characterProfile) return;
+
+        // Initialize discovery if not exists
+        if (!s.characterProfile.discovery) {
+            s.characterProfile.discovery = {
+                currentQuestionIndex: 0,
+                questionResponses: {},
+                discoveredDomains: [],
+                domainDataPoints: {},
+                questionsToday: 0,
+                lastQuestionDate: null,
+                skippedQuestions: []
+            };
+        }
+
+        const discovery = s.characterProfile.discovery;
+
+        // Add data point
+        discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+
+        // Discover if not already discovered
+        if (!discovery.discoveredDomains.includes(domainId)) {
+            discovery.discoveredDomains.push(domainId);
+            const domain = DEFAULT_DOMAINS.find(d => d.id === domainId);
+            if (domain) {
+                new Notice(`🎉 New domain discovered: ${domain.icon} ${domain.name}!`);
+            }
+            this.logActivity('domain_discovered', `Discovered ${domainId} from ${source}`, {
+                domain: domainId,
+                source
+            });
+        }
     }
 
     // ============================================================================
@@ -4332,11 +4620,15 @@ module.exports = class TheJourneyPlugin extends Plugin {
         }
 
         // Apply domain score changes (gradual, capped at ±5 per sync)
+        // Also discover domains through journal activity
         for (const [domainId, impact] of Object.entries(domainImpacts)) {
             const domain = s.domains.find(d => d.id === domainId);
             if (domain) {
                 const change = Math.min(5, Math.max(-5, impact / newNotes.length));
                 domain.score = Math.min(100, Math.max(0, domain.score + Math.round(change)));
+
+                // Discover domain through journal activity (gradual discovery)
+                this.discoverDomainFromActivity(domainId, 'journal');
             }
         }
 
@@ -4480,7 +4772,7 @@ module.exports = class TheJourneyPlugin extends Plugin {
 
     refreshViews() {
         this.app.workspace.getLeavesOfType(VIEW_TYPE_HERO).forEach((leaf) => {
-            if (leaf.view instanceof HeroView) leaf.view.render();
+            if (leaf.view instanceof JourneyView) leaf.view.render();
         });
     }
 

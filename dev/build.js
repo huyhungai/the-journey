@@ -9,10 +9,11 @@ const path = require('path');
 
 // BUILD ORDER - modules combined in sequence
 const BUILD_ORDER = [
-    'dev/src/constants.js',           // Configuration
-    'dev/src/services/SkillService.js', // Skill logic
-    'dev/src/views/JourneyView.js',     // UI code (4 tabs)
-    'dev/main-core.js'                  // Everything else
+    'dev/src/constants.js',              // Configuration
+    'dev/src/services/SkillService.js',  // Skill logic
+    'dev/src/services/DiscoveryService.js', // Gradual discovery system
+    'dev/src/views/JourneyView.js',      // UI code (4 tabs)
+    'dev/main-core.js'                   // Everything else
 ];
 
 function stripModuleExports(content) {

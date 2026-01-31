@@ -1,4 +1,4 @@
-/* The Journey Plugin v0.10 - Enhanced Edition */
+/* The Journey Plugin v0.5 - Beta Edition */
 const { Plugin, ItemView, Notice, Modal, Setting, PluginSettingTab, requestUrl, MarkdownRenderer } = require('obsidian');
 
 
@@ -151,8 +151,7 @@ const DEFAULT_SKILLS_SETTINGS = {
     autoDiscovery: true,
     skillPointsPerLevel: 1,
     availableSkillPoints: 0,
-    totalSkillsDiscovered: 0,
-    analyzedJournals: [] // Track journals that have been analyzed for skills { path, mtime }
+    totalSkillsDiscovered: 0
 };
 
 // ============================================================================
@@ -604,6 +603,682 @@ Empty if nothing: []`;
 }
 
 // ============================================================================
+// DEV/SRC/SERVICES/DISCOVERYSERVICE.JS
+// ============================================================================
+
+/* DiscoveryService - Gradual Domain Discovery System */
+
+// Maps question IDs to their domains for discovery tracking
+const QUESTION_TO_DOMAIN = {};
+
+// Build question-to-domain mapping from QUESTION_BANK
+function buildQuestionDomainMap(questionBank) {
+    for (const [domainId, questions] of Object.entries(questionBank)) {
+        for (const q of questions) {
+            QUESTION_TO_DOMAIN[q.id] = domainId;
+        }
+    }
+}
+
+class DiscoveryService {
+    constructor(plugin) {
+        this.plugin = plugin;
+    }
+
+    // Get or initialize discovery data
+    getDiscoveryData() {
+        const s = this.plugin.settings;
+        if (!s.characterProfile) return null;
+
+        // Initialize discovery object if not exists
+        if (!s.characterProfile.discovery) {
+            s.characterProfile.discovery = {
+                currentQuestionIndex: 0,
+                questionResponses: {},
+                discoveredDomains: [],
+                domainDataPoints: {},
+                questionsToday: 0,
+                lastQuestionDate: null,
+                skippedQuestions: []
+            };
+        }
+
+        return s.characterProfile.discovery;
+    }
+
+    // Get today's date string for comparison
+    getTodayString() {
+        return new Date().toISOString().split('T')[0];
+    }
+
+    // Check and reset daily question counter if new day
+    checkDailyReset() {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return;
+
+        const today = this.getTodayString();
+        if (discovery.lastQuestionDate !== today) {
+            discovery.questionsToday = 0;
+            discovery.lastQuestionDate = today;
+        }
+    }
+
+    // Get count of questions answered today
+    getDailyQuestionCount() {
+        this.checkDailyReset();
+        const discovery = this.getDiscoveryData();
+        return discovery ? discovery.questionsToday : 0;
+    }
+
+    // No daily limit - users can answer as many as they want
+    isDailyLimitReached() {
+        return false; // No limit
+    }
+
+    // Get the next unanswered question (from core bank or AI-generated)
+    getCurrentQuestion(questionBank, domainOrder) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) {
+            console.log('[Discovery] No discovery data');
+            return null;
+        }
+
+        console.log('[Discovery] getCurrentQuestion - responses:', Object.keys(discovery.questionResponses).length);
+
+        // Build all core questions in order
+        const allQuestions = [];
+        for (const domainId of domainOrder) {
+            const domainQuestions = questionBank[domainId] || [];
+            for (const q of domainQuestions) {
+                allQuestions.push({ ...q, domain: domainId });
+            }
+        }
+
+        // Find first unanswered core question that's not skipped
+        for (const q of allQuestions) {
+            if (!discovery.questionResponses[q.id] && !discovery.skippedQuestions.includes(q.id)) {
+                console.log('[Discovery] Next question:', q.id);
+                return q;
+            }
+        }
+
+        // If all core questions answered or skipped, try skipped ones first
+        if (discovery.skippedQuestions.length > 0) {
+            const skippedId = discovery.skippedQuestions[0];
+            for (const q of allQuestions) {
+                if (q.id === skippedId) {
+                    return q;
+                }
+            }
+        }
+
+        // Check for pending AI-generated question
+        if (discovery.pendingAiQuestion) {
+            return discovery.pendingAiQuestion;
+        }
+
+        // All core questions done - return null to trigger AI generation
+        return { needsAiGeneration: true };
+    }
+
+    // Check if all core questions are completed
+    areCoreQuestionsComplete(questionBank, domainOrder) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return false;
+
+        for (const domainId of domainOrder) {
+            const domainQuestions = questionBank[domainId] || [];
+            for (const q of domainQuestions) {
+                if (!discovery.questionResponses[q.id]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Generate AI question for a specific domain (or weakest domain)
+    async generateAiQuestion(domainOrder, domains) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return null;
+
+        // Find the domain with lowest score (needs most exploration)
+        const domainScores = {};
+        for (const d of domains) {
+            domainScores[d.id] = d.score;
+        }
+
+        // Sort domains by score (lowest first) to focus on growth areas
+        const sortedDomains = [...domainOrder].sort((a, b) =>
+            (domainScores[a] || 50) - (domainScores[b] || 50)
+        );
+
+        // Pick one of the 3 weakest domains randomly for variety
+        const weakestDomains = sortedDomains.slice(0, 3);
+        const targetDomainId = weakestDomains[Math.floor(Math.random() * weakestDomains.length)];
+        const targetDomain = domains.find(d => d.id === targetDomainId);
+
+        // Generate unique question ID
+        const aiQuestionCount = discovery.aiQuestionsAnswered || 0;
+        const questionId = `ai_${targetDomainId}_${aiQuestionCount + 1}`;
+
+        // Check if we have API key for AI generation
+        const apiKey = getActiveApiKey(this.plugin.settings);
+        if (!apiKey) {
+            // Fallback to template questions if no API key
+            return this.getFallbackQuestion(targetDomainId, targetDomain, questionId);
+        }
+
+        try {
+            const question = await this.callAiForQuestion(targetDomainId, targetDomain, discovery);
+            if (question) {
+                return {
+                    id: questionId,
+                    text: question.text,
+                    hint: question.hint || null,
+                    domain: targetDomainId,
+                    weight: 1.0,
+                    positiveFraming: true,
+                    isAiGenerated: true
+                };
+            }
+        } catch (e) {
+            console.error('AI question generation failed:', e);
+        }
+
+        // Fallback if AI fails
+        return this.getFallbackQuestion(targetDomainId, targetDomain, questionId);
+    }
+
+    // Call AI to generate a personalized question
+    async callAiForQuestion(domainId, domain, discovery) {
+        const s = this.plugin.settings;
+        const apiKey = getActiveApiKey(s);
+        const provider = s.ai?.provider || 'openrouter';
+        const model = getActiveChatModel(s);
+
+        const domainDescriptions = {
+            psychologicalWellbeing: 'mental health, emotional well-being, life satisfaction, stress management, self-awareness',
+            health: 'physical health, exercise, sleep, nutrition, energy levels, body care',
+            timeUse: 'work-life balance, time management, leisure, productivity, rest and recovery',
+            education: 'learning, skill development, intellectual growth, curiosity, knowledge acquisition',
+            culturalResilience: 'cultural identity, authenticity, traditions, self-expression, heritage',
+            goodGovernance: 'self-leadership, decision-making, boundaries, personal responsibility, values',
+            communityVitality: 'relationships, social connections, community, belonging, support systems',
+            ecologicalAwareness: 'environmental consciousness, nature connection, sustainability',
+            livingStandards: 'financial well-being, career, material security, professional growth'
+        };
+
+        const prompt = `You are a life coach helping someone discover their strengths and growth areas through the HUMAN 3.0 framework and GNH (Gross National Happiness) domains.
+
+Generate ONE reflective question for the "${domain?.name || domainId}" domain.
+Domain focus: ${domainDescriptions[domainId] || domainId}
+
+The question should:
+1. Be introspective and encourage self-reflection
+2. Be answerable on a 1-5 scale (Strongly Disagree to Strongly Agree)
+3. Be positively framed (higher score = better)
+4. Be different from typical assessment questions
+5. Feel personal and meaningful
+
+User's current ${domain?.name} score: ${domain?.score || 50}%
+Questions answered so far: ${Object.keys(discovery.questionResponses).length}
+
+Respond in JSON format only:
+{"text": "Your question here", "hint": "Optional helpful hint"}`;
+
+        const providerConfig = AI_PROVIDERS[provider];
+        let endpoint = providerConfig.chatEndpoint;
+
+        // Handle Google's different URL format
+        if (provider === 'google') {
+            endpoint = endpoint.replace('{model}', model);
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            ...providerConfig.extraHeaders
+        };
+
+        if (providerConfig.authHeader) {
+            headers[providerConfig.authHeader] = `${providerConfig.authPrefix}${apiKey}`;
+        }
+
+        let body;
+        if (provider === 'google') {
+            endpoint += `?key=${apiKey}`;
+            body = JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.8, maxOutputTokens: 200 }
+            });
+        } else if (provider === 'anthropic') {
+            body = JSON.stringify({
+                model: model,
+                max_tokens: 200,
+                messages: [{ role: 'user', content: prompt }]
+            });
+        } else {
+            body = JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.8,
+                max_tokens: 200
+            });
+        }
+
+        const response = await requestUrl({
+            url: endpoint,
+            method: 'POST',
+            headers: headers,
+            body: body
+        });
+
+        let content = '';
+        if (provider === 'google') {
+            content = response.json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        } else if (provider === 'anthropic') {
+            content = response.json?.content?.[0]?.text || '';
+        } else {
+            content = response.json?.choices?.[0]?.message?.content || '';
+        }
+
+        // Parse JSON from response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+
+        return null;
+    }
+
+    // Fallback questions when AI is not available
+    getFallbackQuestion(domainId, domain, questionId) {
+        const fallbackQuestions = {
+            psychologicalWellbeing: [
+                { text: 'I feel emotionally balanced even when facing challenges', hint: 'Consider your emotional resilience' },
+                { text: 'I have a clear sense of purpose in my daily life', hint: 'Think about what drives you' },
+                { text: 'I practice self-compassion when I make mistakes', hint: 'How do you treat yourself?' }
+            ],
+            health: [
+                { text: 'I listen to my body\'s signals and respond appropriately', hint: 'Consider hunger, fatigue, stress signals' },
+                { text: 'I have consistent energy throughout my day', hint: 'Think about your typical energy patterns' },
+                { text: 'I prioritize recovery and rest as much as activity', hint: 'Balance is key' }
+            ],
+            timeUse: [
+                { text: 'I spend my time on activities that align with my values', hint: 'Consider how you allocate your hours' },
+                { text: 'I rarely feel rushed or overwhelmed by my schedule', hint: 'Think about your pace of life' },
+                { text: 'I make time for things that bring me joy', hint: 'Not just obligations, but genuine enjoyment' }
+            ],
+            education: [
+                { text: 'I actively seek out new knowledge and perspectives', hint: 'Consider your curiosity level' },
+                { text: 'I apply what I learn to improve my life', hint: 'Learning that creates change' },
+                { text: 'I enjoy being challenged intellectually', hint: 'Growth through mental challenge' }
+            ],
+            culturalResilience: [
+                { text: 'I express my authentic self in most situations', hint: 'Being true to who you are' },
+                { text: 'I feel connected to something larger than myself', hint: 'Culture, community, or meaning' },
+                { text: 'I honor traditions that are meaningful to me', hint: 'Personal or cultural rituals' }
+            ],
+            goodGovernance: [
+                { text: 'I make decisions based on my values, not others\' expectations', hint: 'Self-directed choices' },
+                { text: 'I follow through on commitments I make to myself', hint: 'Personal integrity' },
+                { text: 'I can say no without feeling guilty', hint: 'Healthy boundaries' }
+            ],
+            communityVitality: [
+                { text: 'I have people I can count on during difficult times', hint: 'Your support network' },
+                { text: 'I contribute positively to my communities', hint: 'Giving, not just receiving' },
+                { text: 'I feel genuinely connected to others in my life', hint: 'Quality of relationships' }
+            ],
+            ecologicalAwareness: [
+                { text: 'I feel connected to nature and the environment', hint: 'Your relationship with the natural world' },
+                { text: 'I consider environmental impact in my choices', hint: 'Daily decisions and their effects' },
+                { text: 'Spending time in nature improves my well-being', hint: 'The healing power of nature' }
+            ],
+            livingStandards: [
+                { text: 'I feel financially secure in my current situation', hint: 'Not wealthy, but stable' },
+                { text: 'My work contributes meaningfully to my life', hint: 'Beyond just income' },
+                { text: 'I have enough resources to pursue what matters to me', hint: 'Freedom to choose' }
+            ]
+        };
+
+        const domainFallbacks = fallbackQuestions[domainId] || fallbackQuestions.psychologicalWellbeing;
+        const discovery = this.getDiscoveryData();
+        const aiCount = discovery?.aiQuestionsAnswered || 0;
+        const fallback = domainFallbacks[aiCount % domainFallbacks.length];
+
+        return {
+            id: questionId,
+            text: fallback.text,
+            hint: fallback.hint,
+            domain: domainId,
+            weight: 1.0,
+            positiveFraming: true,
+            isAiGenerated: false,
+            isFallback: true
+        };
+    }
+
+    // Store pending AI question
+    setPendingAiQuestion(question) {
+        const discovery = this.getDiscoveryData();
+        if (discovery) {
+            discovery.pendingAiQuestion = question;
+        }
+    }
+
+    // Clear pending AI question after it's answered
+    clearPendingAiQuestion() {
+        const discovery = this.getDiscoveryData();
+        if (discovery) {
+            discovery.pendingAiQuestion = null;
+        }
+    }
+
+    // Answer a question and potentially discover a domain
+    async answerQuestion(questionId, value, questionBank, currentQuestion = null) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return { success: false };
+
+        // Record the response
+        discovery.questionResponses[questionId] = value;
+        discovery.questionsToday++;
+        discovery.lastQuestionDate = this.getTodayString();
+        console.log('[Discovery] Recorded answer:', questionId, '=', value, 'Total responses:', Object.keys(discovery.questionResponses).length);
+
+        // Remove from skipped if it was there
+        const skippedIdx = discovery.skippedQuestions.indexOf(questionId);
+        if (skippedIdx >= 0) {
+            discovery.skippedQuestions.splice(skippedIdx, 1);
+        }
+
+        // Find the domain and question details for this question
+        let domainId = null;
+        let questionData = null;
+        let isAiQuestion = false;
+
+        // Check if it's an AI-generated question (passed directly)
+        if (currentQuestion && (currentQuestion.isAiGenerated || currentQuestion.isFallback)) {
+            domainId = currentQuestion.domain;
+            questionData = currentQuestion;
+            isAiQuestion = true;
+            // Track AI questions answered
+            discovery.aiQuestionsAnswered = (discovery.aiQuestionsAnswered || 0) + 1;
+            // Clear pending AI question
+            this.clearPendingAiQuestion();
+        } else {
+            // Search in core question bank
+            for (const [dId, questions] of Object.entries(questionBank)) {
+                const q = questions.find(q => q.id === questionId);
+                if (q) {
+                    domainId = dId;
+                    questionData = q;
+                    break;
+                }
+            }
+        }
+
+        // Track data point for domain and discover if new
+        let domainDiscovered = false;
+        if (domainId) {
+            discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+
+            // Discover domain if this is the first data point
+            if (!this.isDomainDiscovered(domainId)) {
+                domainDiscovered = true;
+                discovery.discoveredDomains.push(domainId);
+            }
+
+            // Update the domain score based on this answer
+            this.updateDomainScoreFromAnswer(domainId, value, questionData, questionBank, isAiQuestion);
+        }
+
+        // Save discovery data first (important!)
+        await this.plugin.saveSettings();
+
+        // Award XP using plugin's gainXp method (handles level ups, notices, saves settings)
+        // AI questions give slightly more XP to encourage continued exploration
+        const xpReward = isAiQuestion ? 7 : 5;
+        const goldReward = isAiQuestion ? 2 : 1;
+        this.plugin.gainXp(xpReward, goldReward, domainId);
+
+        return {
+            success: true,
+            xpReward,
+            goldReward,
+            domainId,
+            domainDiscovered,
+            isAiQuestion
+        };
+    }
+
+    // Update domain score based on a single answer
+    updateDomainScoreFromAnswer(domainId, value, questionData, questionBank, isAiQuestion = false) {
+        const s = this.plugin.settings;
+        const domain = s.domains?.find(d => d.id === domainId);
+        if (!domain) {
+            console.log('[Discovery] Domain not found:', domainId);
+            return;
+        }
+        console.log('[Discovery] Updating domain:', domainId, 'value:', value, 'current score:', domain.score);
+
+        // Get all responses for this domain
+        const discovery = this.getDiscoveryData();
+        const domainQuestions = questionBank[domainId] || [];
+
+        // For AI questions, directly update score based on single answer
+        if (isAiQuestion && questionData) {
+            let score = value;
+            if (questionData.positiveFraming === false) {
+                score = 6 - score;
+            }
+            // Convert 1-5 to 0-100 scale
+            const answerPercent = (score - 1) * 25;
+            // Blend with existing score (AI questions have less weight individually)
+            const aiWeight = 0.1; // 10% influence per AI question
+            domain.score = Math.round(domain.score * (1 - aiWeight) + answerPercent * aiWeight);
+            domain.score = Math.max(0, Math.min(100, domain.score));
+            return;
+        }
+
+        let totalWeight = 0;
+        let weightedSum = 0;
+        let responseCount = 0;
+
+        for (const q of domainQuestions) {
+            if (discovery.questionResponses[q.id] !== undefined) {
+                let score = discovery.questionResponses[q.id];
+                // Reverse score for negatively framed questions
+                if (q.positiveFraming === false) {
+                    score = 6 - score;
+                }
+                const weight = q.weight || 1;
+                totalWeight += weight;
+                weightedSum += score * weight;
+                responseCount++;
+            }
+        }
+
+        if (responseCount > 0) {
+            // Calculate weighted average, then scale to 0-100
+            const avgScore = weightedSum / totalWeight; // 1-5 scale
+            const percentScore = Math.round((avgScore - 1) * 25); // Convert to 0-100
+            const oldScore = domain.score;
+            domain.score = Math.max(0, Math.min(100, percentScore));
+            console.log('[Discovery] Updated', domainId, 'from', oldScore, 'to', domain.score, '(responses:', responseCount, 'avgScore:', avgScore.toFixed(2), ')');
+        } else {
+            console.log('[Discovery] No responses found for domain:', domainId);
+        }
+    }
+
+    // Skip a question for now
+    async skipQuestion(questionId) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return;
+
+        if (!discovery.skippedQuestions.includes(questionId)) {
+            discovery.skippedQuestions.push(questionId);
+        }
+
+        await this.plugin.saveSettings();
+    }
+
+    // Check if a domain has been discovered
+    isDomainDiscovered(domainId) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return false;
+        return discovery.discoveredDomains.includes(domainId);
+    }
+
+    // Discover a domain from various sources
+    async discoverDomain(domainId, source = 'question') {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return false;
+
+        if (discovery.discoveredDomains.includes(domainId)) {
+            // Already discovered - just add data point
+            discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+            return false;
+        }
+
+        // Discover the domain
+        discovery.discoveredDomains.push(domainId);
+        discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+
+        // Log the discovery
+        this.plugin.logActivity?.('domain_discovered', `Discovered ${domainId} from ${source}`, {
+            domain: domainId,
+            source
+        });
+
+        await this.plugin.saveSettings();
+        return true; // Domain was newly discovered
+    }
+
+    // Check if domain has enough data to show score
+    canShowDomainScore(domainId) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return false;
+
+        // Need at least 2 data points to show a score
+        return (discovery.domainDataPoints[domainId] || 0) >= 2;
+    }
+
+    // Get the number of data points for a domain
+    getDomainDataPoints(domainId) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return 0;
+        return discovery.domainDataPoints[domainId] || 0;
+    }
+
+    // Get total answered questions count
+    getTotalAnsweredQuestions() {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return 0;
+        return Object.keys(discovery.questionResponses).length;
+    }
+
+    // Get discovered domains list
+    getDiscoveredDomains() {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return [];
+        return discovery.discoveredDomains;
+    }
+
+    // Get quadrant discovery status (unlocked when at least 1 domain in quadrant discovered)
+    isQuadrantDiscovered(quadrantId, domainToQuadrant) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return false;
+
+        // Find all domains in this quadrant
+        for (const [domainId, qId] of Object.entries(domainToQuadrant)) {
+            if (qId === quadrantId && discovery.discoveredDomains.includes(domainId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Calculate domain score from answered questions
+    calculateDomainScore(domainId, questionBank) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return 50; // Default neutral score
+
+        const domainQuestions = questionBank[domainId] || [];
+        const responses = [];
+
+        for (const q of domainQuestions) {
+            if (discovery.questionResponses[q.id] !== undefined) {
+                let score = discovery.questionResponses[q.id];
+                // Reverse score for negatively framed questions
+                if (q.positiveFraming === false) {
+                    score = 6 - score;
+                }
+                // Apply weight
+                const weight = q.weight || 1;
+                responses.push({ score, weight });
+            }
+        }
+
+        if (responses.length === 0) {
+            // No question responses, return existing domain score or default
+            const domain = this.plugin.settings.domains?.find(d => d.id === domainId);
+            return domain?.score || 50;
+        }
+
+        // Calculate weighted average, then scale to 0-100
+        const totalWeight = responses.reduce((sum, r) => sum + r.weight, 0);
+        const weightedSum = responses.reduce((sum, r) => sum + (r.score * r.weight), 0);
+        const avgScore = weightedSum / totalWeight; // 1-5 scale
+        const percentScore = Math.round((avgScore - 1) * 25); // Convert to 0-100
+
+        return Math.max(0, Math.min(100, percentScore));
+    }
+
+    // Migrate existing users who completed the old assessment
+    migrateFromLegacyAssessment(assessmentResponses, questionBank) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return;
+
+        // Already migrated or has discovery data
+        if (discovery.discoveredDomains.length > 0 || Object.keys(discovery.questionResponses).length > 0) {
+            return;
+        }
+
+        // Convert old responses array to new format
+        if (assessmentResponses && assessmentResponses.length > 0) {
+            for (const response of assessmentResponses) {
+                discovery.questionResponses[response.questionId] = response.value;
+
+                // Find and track domain
+                for (const [domainId, questions] of Object.entries(questionBank)) {
+                    const q = questions.find(q => q.id === response.questionId);
+                    if (q) {
+                        discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+                        if (!discovery.discoveredDomains.includes(domainId)) {
+                            discovery.discoveredDomains.push(domainId);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if all domains have been discovered
+    areAllDomainsDiscovered(domainOrder) {
+        const discovery = this.getDiscoveryData();
+        if (!discovery) return false;
+
+        return domainOrder.every(domainId => discovery.discoveredDomains.includes(domainId));
+    }
+}
+
+// Export for use in main-core.js
+if (typeof module !== 'undefined' && module.exports) {
+    
+}
+
+// ============================================================================
 // DEV/SRC/VIEWS/JOURNEYVIEW.JS
 // ============================================================================
 
@@ -618,10 +1293,12 @@ class JourneyView extends ItemView {
         this.isAiLoading = false;
         // Adventure section states (for collapsible sections)
         this.adventureSections = {
-            journal: true,
-            quests: true,
-            arena: false,
-            rest: false
+            rest: true,      // Rest & Recovery (open by default - check in first)
+            journal: false,  // Journal
+            arena: false,    // Boss Fights
+            quests: true,    // Quests (open by default)
+            habits: true,    // Daily Habits (open by default)
+            badhabits: false // Bad Habits
         };
     }
 
@@ -724,222 +1401,28 @@ class JourneyView extends ItemView {
         // --- CHARACTER SECTION ---
         container.createEl("h3", { text: "🎭 Character Profile" });
 
-        // Discovery Journey prompt if not completed
-        if (!s.characterProfile.assessmentComplete) {
-            const journeyBox = container.createDiv({ cls: 'journey-journey-prompt' });
-            journeyBox.createEl('h4', { text: '🧭 Discovery Journey' });
-            journeyBox.createEl('p', {
-                text: 'Answer 37 questions to discover your true strengths and unlock your full potential!',
-                cls: 'journey-journey-desc'
-            });
-
-            const journeyBtn = journeyBox.createEl('button', {
-                text: '🧭 Start Discovery Journey',
-                cls: 'journey-full-width-btn journey'
-            });
-            journeyBtn.onclick = () => {
-                const modal = new CharacterCreationModal(this.app, this.plugin, () => this.render());
-                modal.characterName = s.characterProfile.name;
-                modal.currentStep = 'domain_intro';
-                modal.open();
-            };
-        }
-
-        // Daily Wisdom
-        const today = new Date().toDateString();
-        if (s.lastWisdomDate !== today || !s.dailyWisdom) {
-            s.dailyWisdom = getContextualWisdom(s);
-            s.lastWisdomDate = today;
-            this.plugin.saveSettings();
-        }
-
-        if (s.dailyWisdom) {
+        // Dynamic Wisdom - changes every time tab opens, based on HUMAN 3.0 state
+        const wisdom = getHuman30Wisdom(s);
+        if (wisdom) {
             const wisdomSection = container.createDiv({ cls: 'journey-wisdom-section standalone' });
-            wisdomSection.createDiv({ cls: 'journey-wisdom-label', text: '💡 Daily Wisdom' });
-            wisdomSection.createDiv({ cls: 'journey-wisdom-quote', text: `"${s.dailyWisdom.text}"` });
-            if (s.dailyWisdom.source) {
-                wisdomSection.createDiv({ cls: 'journey-wisdom-source', text: `— ${s.dailyWisdom.source}` });
+            wisdomSection.createDiv({ cls: 'journey-wisdom-label', text: `💡 ${wisdom.category}` });
+            wisdomSection.createDiv({ cls: 'journey-wisdom-quote', text: `"${wisdom.text}"` });
+            if (wisdom.source) {
+                wisdomSection.createDiv({ cls: 'journey-wisdom-source', text: `— ${wisdom.source}` });
             }
         }
 
-        // HUMAN 3.0 Framework Section
-        if (s.characterProfile.assessmentComplete) {
-            const human3Section = container.createDiv({ cls: 'journey-human3-section' });
-            human3Section.createEl('h4', { text: '🎯 HUMAN 3.0 Framework' });
+        // HUMAN 3.0 Framework State
+        this.renderHumanState(container);
 
-            // Calculate development level and tier progress
-            const quadrantScores = calculateQuadrantScores(s.domains);
-            const devLevel = getDevelopmentLevel(s.level);
-            const devInfo = DEVELOPMENT_LEVELS[devLevel];
-            const tierProgress = getTierProgress(s.level);
-            const levelsToNext = getLevelsToNextTier(s.level);
-
-            // Development Level Display
-            const devLevelSection = human3Section.createDiv({ cls: 'journey-dev-level' });
-            devLevelSection.innerHTML = `
-                <div class="journey-dev-level-badge level-${devLevel.replace('.', '-')}">${devInfo.icon} HUMAN ${devLevel}</div>
-                <div class="journey-dev-level-title">${devInfo.name} - ${devInfo.title}</div>
-                <div class="journey-dev-level-journey">${devInfo.journey}</div>
-                <div class="journey-dev-level-desc">${devInfo.desc}</div>
-            `;
-
-            // Tier Progress Bar
-            const tierProgressSection = human3Section.createDiv({ cls: 'journey-tier-progress' });
-            tierProgressSection.innerHTML = `
-                <div class="journey-tier-progress-label">Tier Progress: ${tierProgress}%</div>
-                <div class="journey-tier-progress-bar">
-                    <div class="journey-tier-progress-fill" style="width: ${tierProgress}%"></div>
-                </div>
-                ${levelsToNext > 0
-                    ? `<div class="journey-tier-next">${levelsToNext} levels to HUMAN ${devLevel === '1.0' ? '2.0' : '3.0'}</div>`
-                    : `<div class="journey-tier-max">🌟 Maximum HUMAN tier achieved!</div>`
-                }
-            `;
-        }
-
-        // Enhanced Four Quadrants Section
-        if (s.characterProfile.assessmentComplete) {
-            const quadrantsSection = container.createDiv({ cls: 'journey-quadrants-section' });
-            quadrantsSection.createEl('h4', { text: '📊 Four Quadrants of Development' });
-
-            const quadrantScores = calculateQuadrantScores(s.domains);
-
-            // Calculate overall balance score
-            const quadrantValues = Object.values(quadrantScores);
-            const overallScore = Math.round(quadrantValues.reduce((a, b) => a + b, 0) / 4);
-            const minQuadrant = Math.min(...quadrantValues);
-            const maxQuadrant = Math.max(...quadrantValues);
-            const balance = 100 - (maxQuadrant - minQuadrant);
-
-            // Overall stats
-            const overallStats = quadrantsSection.createDiv({ cls: 'journey-quadrant-overall' });
-            overallStats.innerHTML = `
-                <div class="journey-quadrant-overall-stat">
-                    <span class="label">Overall:</span>
-                    <span class="value">${overallScore}%</span>
-                </div>
-                <div class="journey-quadrant-overall-stat">
-                    <span class="label">Balance:</span>
-                    <span class="value ${balance >= 70 ? 'good' : balance >= 50 ? 'fair' : 'low'}">${balance}%</span>
-                </div>
-            `;
-
-            const quadrantsGrid = quadrantsSection.createDiv({ cls: 'journey-quadrants-grid' });
-
-            QUADRANTS.forEach(quadrant => {
-                const score = Math.round(quadrantScores[quadrant.id]);
-                const relatedDomainIds = Object.entries(DOMAIN_TO_QUADRANT)
-                    .filter(([_, q]) => q === quadrant.id)
-                    .map(([domainId, _]) => domainId);
-                const relatedDomains = s.domains.filter(d => relatedDomainIds.includes(d.id));
-
-                const card = quadrantsGrid.createDiv({ cls: 'journey-quadrant-card' });
-
-                // Quadrant Header
-                const header = card.createDiv({ cls: 'journey-quadrant-header', attr: { style: `background: ${quadrant.color}20` } });
-                header.innerHTML = `
-                    <span class="journey-quadrant-icon">${quadrant.icon}</span>
-                    <span class="journey-quadrant-name">${quadrant.name}</span>
-                `;
-
-                // Quadrant Score Bar
-                const barContainer = card.createDiv({ cls: 'journey-quadrant-bar-container' });
-                barContainer.createDiv({
-                    cls: 'journey-quadrant-bar',
-                    attr: { style: `width: ${score}%; background-color: ${quadrant.color}` }
-                });
-                card.createDiv({ cls: 'journey-quadrant-score', text: `${score}%` });
-
-                // Quadrant Description
-                card.createDiv({ cls: 'journey-quadrant-desc', text: quadrant.desc });
-
-                // Related Domains
-                const domainsContainer = card.createDiv({ cls: 'journey-quadrant-domains' });
-                relatedDomains.forEach(domain => {
-                    const domainRow = domainsContainer.createDiv({ cls: 'journey-quadrant-domain-row' });
-                    domainRow.innerHTML = `
-                        <span class="journey-qd-icon">${domain.icon}</span>
-                        <span class="journey-qd-name">${domain.name}</span>
-                        <span class="journey-qd-score">${domain.score}%</span>
-                    `;
-                });
-            });
-        }
-
-        // Journey Stats Section
-        if (s.characterProfile.assessmentComplete) {
-            const statsSection = container.createDiv({ cls: 'journey-char-stats-summary' });
-            statsSection.createEl('h4', { text: '📈 Journey Stats' });
-
-            const createdDate = new Date(s.characterProfile.createdAt).toLocaleDateString();
-            const statsGrid = statsSection.createDiv({ cls: 'journey-stats-grid' });
-
-            statsGrid.innerHTML = `
-                <div class="journey-stat-card">
-                    <div class="journey-stat-icon">📅</div>
-                    <div class="journey-stat-label">Started</div>
-                    <div class="journey-stat-value">${createdDate}</div>
-                </div>
-                <div class="journey-stat-card">
-                    <div class="journey-stat-icon">✅</div>
-                    <div class="journey-stat-label">Habits</div>
-                    <div class="journey-stat-value">${s.totalHabitsCompleted || 0}</div>
-                </div>
-                <div class="journey-stat-card">
-                    <div class="journey-stat-icon">⚔️</div>
-                    <div class="journey-stat-label">Quests</div>
-                    <div class="journey-stat-value">${s.totalQuestsCompleted || 0}</div>
-                </div>
-                <div class="journey-stat-card">
-                    <div class="journey-stat-icon">💰</div>
-                    <div class="journey-stat-label">Gold Earned</div>
-                    <div class="journey-stat-value">${s.totalGoldEarned || 0}</div>
-                </div>
-            `;
-        }
+        // Gradual Quadrant Discovery - shows only discovered domains
+        this.renderGradualQuadrants(container);
 
         // --- SKILLS SECTION ---
         container.createEl("h3", { text: "🎯 Skills", cls: 'journey-section-divider' });
 
         const skillService = new SkillService(this.plugin);
         const skills = skillService.getSkills();
-        const ss = s.skillsSettings || {};
-
-        // Skill Points Banner
-        const skillPointsBanner = container.createDiv({ cls: 'journey-skill-points-banner' });
-        skillPointsBanner.innerHTML = `
-            <div class="journey-skill-points-icon">⭐</div>
-            <div class="journey-skill-points-info">
-                <div class="journey-skill-points-count">${ss.availableSkillPoints || 0}</div>
-                <div class="journey-skill-points-label">Skill Points</div>
-            </div>
-        `;
-
-        // Skills Summary
-        const summary = skillService.getSkillSummary();
-        const summaryCard = container.createDiv({ cls: 'journey-skills-summary' });
-        summaryCard.innerHTML = `
-            <div class="journey-skills-stat">
-                <span class="journey-skills-stat-value">${summary.total}</span>
-                <span class="journey-skills-stat-label">Total</span>
-            </div>
-            <div class="journey-skills-stat">
-                <span class="journey-skills-stat-value">${summary.byCategory.mind || 0}</span>
-                <span class="journey-skills-stat-label">🧠</span>
-            </div>
-            <div class="journey-skills-stat">
-                <span class="journey-skills-stat-value">${summary.byCategory.body || 0}</span>
-                <span class="journey-skills-stat-label">💪</span>
-            </div>
-            <div class="journey-skills-stat">
-                <span class="journey-skills-stat-value">${summary.byCategory.spirit || 0}</span>
-                <span class="journey-skills-stat-label">✨</span>
-            </div>
-            <div class="journey-skills-stat">
-                <span class="journey-skills-stat-value">${summary.byCategory.vocation || 0}</span>
-                <span class="journey-skills-stat-label">⚔️</span>
-            </div>
-        `;
 
         // Action Buttons Row
         const actionRow = container.createDiv({ cls: 'journey-skill-actions' });
@@ -952,21 +1435,7 @@ class JourneyView extends ItemView {
             new AddSkillModal(this.app, this.plugin, () => this.render()).open();
         };
 
-        const apiKey = getActiveApiKey(s);
-        if (apiKey) {
-            const discoverBtn = actionRow.createEl('button', {
-                text: '🔍 Discover from Journals',
-                cls: 'journey-mini-btn primary'
-            });
-            discoverBtn.onclick = async () => {
-                discoverBtn.disabled = true;
-                discoverBtn.textContent = '🔍 Discovering...';
-                await this.plugin.manualDiscoverSkills();
-                this.render();
-            };
-        }
-
-        // Skills by Category (compact)
+        // Skills by Category (expanded with details)
         Object.entries(SKILL_CATEGORIES).forEach(([catId, catInfo]) => {
             const categorySkills = skills.filter(s => s.category === catId);
             if (categorySkills.length === 0) return;
@@ -977,19 +1446,67 @@ class JourneyView extends ItemView {
             const skillsList = categorySection.createDiv({ cls: 'journey-skills-list' });
             categorySkills.forEach(skill => {
                 const xpPercent = Math.round((skill.xp / skill.xpToNextLevel) * 100);
-                const skillCard = skillsList.createDiv({ cls: 'journey-skill-card' });
-                skillCard.innerHTML = `
-                    <div class="journey-skill-header">
+                const practiceQuote = this.getSkillQuote(skill);
+
+                const skillCard = skillsList.createDiv({ cls: 'journey-skill-card expanded' });
+
+                // Header row with name, level, and actions
+                const headerRow = skillCard.createDiv({ cls: 'journey-skill-header-row' });
+                headerRow.innerHTML = `
+                    <div class="journey-skill-info">
                         <span class="journey-skill-name">${skill.name}</span>
-                        <span class="journey-skill-level">Lv. ${skill.level}</span>
-                    </div>
-                    <div class="journey-skill-bar">
-                        <div class="journey-skill-bar-fill" style="width: ${xpPercent}%"></div>
+                        <span class="journey-skill-level-badge">Lv. ${skill.level}</span>
                     </div>
                 `;
 
+                // Action buttons container
+                const actionBtns = headerRow.createDiv({ cls: 'journey-skill-actions-row' });
+
+                // Check if skill can evolve (level 5+)
+                const evolvedName = skillService.checkSkillEvolution(skill);
+                if (evolvedName && skill.name !== evolvedName) {
+                    const evolveBtn = actionBtns.createEl('button', {
+                        text: '🌟 Evolve',
+                        cls: 'journey-skill-evolve-btn'
+                    });
+                    evolveBtn.title = `Evolve to ${evolvedName}`;
+                    evolveBtn.onclick = async () => {
+                        if (confirm(`Evolve "${skill.name}" to "${evolvedName}"?`)) {
+                            skill.name = evolvedName;
+                            await this.plugin.saveSettings();
+                            new Notice(`🌟 ${skill.name} has evolved!`);
+                            this.render();
+                        }
+                    };
+                }
+
+                // Practice button
+                const practiceBtn = actionBtns.createEl('button', {
+                    text: '⚡ Practice',
+                    cls: 'journey-skill-practice-btn'
+                });
+                practiceBtn.onclick = async () => {
+                    await this.practiceSkill(skill, skillService);
+                };
+
+                // Merge button (combine with similar skill)
+                const otherSkills = skills.filter(s => s.id !== skill.id && s.category === skill.category);
+                if (otherSkills.length > 0) {
+                    const mergeBtn = actionBtns.createEl('button', {
+                        text: '🔗',
+                        cls: 'journey-skill-merge-btn'
+                    });
+                    mergeBtn.title = 'Merge with another skill';
+                    mergeBtn.onclick = () => {
+                        this.showMergeSkillModal(skill, otherSkills, skillService);
+                    };
+                }
+
                 // Delete button
-                const deleteBtn = skillCard.createEl('button', { text: '🗑️', cls: 'journey-skill-delete-btn' });
+                const deleteBtn = actionBtns.createEl('button', {
+                    text: '🗑️',
+                    cls: 'journey-skill-delete-btn'
+                });
                 deleteBtn.onclick = async () => {
                     if (confirm(`Delete skill: ${skill.name}?`)) {
                         skillService.deleteSkill(skill.id);
@@ -997,120 +1514,431 @@ class JourneyView extends ItemView {
                         this.render();
                     }
                 };
+
+                // XP Progress bar with details
+                const xpSection = skillCard.createDiv({ cls: 'journey-skill-xp-section' });
+                xpSection.innerHTML = `
+                    <div class="journey-skill-xp-info">
+                        <span class="journey-skill-xp-text">XP: ${skill.xp} / ${skill.xpToNextLevel}</span>
+                        <span class="journey-skill-practice-count">🏋️ ${skill.totalPracticeCount || 0} practices</span>
+                    </div>
+                    <div class="journey-skill-bar">
+                        <div class="journey-skill-bar-fill" style="width: ${xpPercent}%"></div>
+                    </div>
+                `;
+
+                // Motivational quote/suggestion
+                const quoteSection = skillCard.createDiv({ cls: 'journey-skill-quote' });
+                quoteSection.innerHTML = `<span class="quote-icon">💡</span> <span class="quote-text">${practiceQuote}</span>`;
             });
         });
 
-        // Retake Assessment button
-        if (s.characterProfile.assessmentComplete) {
-            const retakeBtn = container.createEl('button', {
-                text: '🔄 Retake Assessment',
-                cls: 'journey-full-width-btn secondary'
-            });
-            retakeBtn.onclick = () => {
-                if (confirm('Retaking the assessment will update your domain scores. Continue?')) {
-                    new CharacterCreationModal(this.app, this.plugin, () => this.render()).open();
-                }
-            };
-        }
+        // --- DISCOVERY QUESTION SECTION (at bottom) ---
+        this.renderDiscoveryQuestion(container);
     }
 
-    // ============================================================================
-    // ADVENTURE TAB - Collapsible Sections (Journal, Quests, Arena, Rest)
-    // ============================================================================
-    renderAdventure(container) {
-        container.createEl('h3', { text: '⚔️ Your Adventure' });
+    // Render quadrants with scores and domains - only show discovered ones
+    renderGradualQuadrants(container) {
+        const s = this.plugin.settings;
+        const discoveryService = new DiscoveryService(this.plugin);
+        const discoveredDomains = discoveryService.getDiscoveredDomains();
+
+        // If no domains discovered yet, don't show anything
+        if (discoveredDomains.length === 0) return;
+
+        const quadrantsSection = container.createDiv({ cls: 'journey-quadrants-section' });
+        quadrantsSection.createEl('h4', { text: '📊 Your Discovery' });
+
+        const quadrantsGrid = quadrantsSection.createDiv({ cls: 'journey-quadrants-grid' });
+
+        QUADRANTS.forEach(quadrant => {
+            // Get domains for this quadrant that are discovered
+            const quadrantDomainIds = Object.entries(DOMAIN_TO_QUADRANT)
+                .filter(([_, q]) => q === quadrant.id)
+                .map(([domainId, _]) => domainId);
+
+            // Only get discovered domains for this quadrant
+            const discoveredQuadrantDomains = s.domains.filter(d =>
+                quadrantDomainIds.includes(d.id) && discoveredDomains.includes(d.id)
+            );
+
+            // Skip this quadrant if no domains discovered in it
+            if (discoveredQuadrantDomains.length === 0) return;
+
+            // Calculate score only from discovered domains
+            const scores = discoveredQuadrantDomains.map(d => d.score);
+            const score = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+
+            const card = quadrantsGrid.createDiv({ cls: 'journey-quadrant-card' });
+
+            const header = card.createDiv({
+                cls: 'journey-quadrant-header',
+                attr: { style: `background: ${quadrant.color}20` }
+            });
+            header.innerHTML = `
+                <span class="journey-quadrant-icon">${quadrant.icon}</span>
+                <span class="journey-quadrant-name">${quadrant.name}</span>
+                <span class="journey-quadrant-score">${score}%</span>
+            `;
+
+            const barContainer = card.createDiv({ cls: 'journey-quadrant-bar-container' });
+            barContainer.createDiv({
+                cls: 'journey-quadrant-bar',
+                attr: { style: `width: ${score}%; background-color: ${quadrant.color}` }
+            });
+
+            // Show only discovered domains inside the quadrant card
+            const domainsContainer = card.createDiv({ cls: 'journey-quadrant-domains' });
+            discoveredQuadrantDomains.forEach(domain => {
+                const domainRow = domainsContainer.createDiv({ cls: 'journey-quadrant-domain-row' });
+                domainRow.innerHTML = `
+                    <span class="journey-domain-icon-small">${domain.icon}</span>
+                    <span class="journey-domain-name-small">${domain.name}</span>
+                    <div class="journey-domain-bar-mini">
+                        <div class="journey-domain-fill-mini" style="width: ${domain.score}%; background: ${quadrant.color}"></div>
+                    </div>
+                    <span class="journey-domain-score-small">${domain.score}%</span>
+                `;
+            });
+        });
+    }
+
+    // Render HUMAN 3.0 Framework state
+    renderHumanState(container) {
         const s = this.plugin.settings;
 
-        // ===== STATS BAR (HP & Energy) =====
-        const statsBar = container.createDiv({ cls: 'journey-stats-bar' });
-        const hpPercent = Math.round((s.hp / s.maxHp) * 100);
-        const energyPercent = Math.round(((s.energy || 100) / (s.maxEnergy || 100)) * 100);
-        statsBar.innerHTML = `
-            <div class="stat-item">
-                <span class="stat-label">❤️ HP</span>
-                <div class="stat-bar"><div class="stat-fill hp" style="width: ${hpPercent}%"></div></div>
-                <span class="stat-value">${s.hp}/${s.maxHp}</span>
+        // Get HUMAN 3.0 data
+        const devLevel = getDevelopmentLevel(s.level);
+        const devInfo = DEVELOPMENT_LEVELS[devLevel];
+        const currentPhase = determinePhase(s);
+        const phaseInfo = PHASES[currentPhase];
+        const tierProgress = getTierProgress(s.level);
+
+        const stateSection = container.createDiv({ cls: 'journey-human-state' });
+
+        // HUMAN Tier Card
+        const tierCard = stateSection.createDiv({ cls: 'journey-human-tier-card' });
+        tierCard.innerHTML = `
+            <div class="journey-tier-header">
+                <span class="journey-tier-icon">${devInfo.icon}</span>
+                <div class="journey-tier-info">
+                    <span class="journey-tier-level">HUMAN ${devLevel}</span>
+                    <span class="journey-tier-name">${devInfo.name}</span>
+                </div>
             </div>
-            <div class="stat-item">
-                <span class="stat-label">⚡ Energy</span>
-                <div class="stat-bar"><div class="stat-fill energy" style="width: ${energyPercent}%"></div></div>
-                <span class="stat-value">${s.energy || 100}/${s.maxEnergy || 100}</span>
+            <div class="journey-tier-desc">${devInfo.desc}</div>
+            <div class="journey-tier-journey">🎯 ${devInfo.journey}</div>
+            <div class="journey-tier-progress">
+                <div class="journey-tier-progress-bar">
+                    <div class="journey-tier-progress-fill" style="width: ${tierProgress}%"></div>
+                </div>
+                <span class="journey-tier-progress-text">${tierProgress}% to next tier</span>
             </div>
         `;
 
-        // ===== 1. ACTIVITY CALENDAR (First) =====
-        this.renderActivityCalendar(container);
+        // Current Phase Card
+        const phaseCard = stateSection.createDiv({ cls: 'journey-phase-card' });
+        phaseCard.innerHTML = `
+            <div class="journey-phase-header">
+                <span class="journey-phase-icon">${phaseInfo.icon}</span>
+                <span class="journey-phase-name">${phaseInfo.name} Phase</span>
+                <span class="journey-phase-multiplier">×${phaseInfo.xpMultiplier} XP</span>
+            </div>
+            <div class="journey-phase-desc">${phaseInfo.desc}</div>
+        `;
+    }
 
-        // ===== 2. LOG LAST NIGHT'S SLEEP =====
-        const sleepSection = container.createDiv({ cls: 'journey-daily-checkin' });
-        sleepSection.createEl('h4', { text: '😴 Log Last Night\'s Sleep' });
-        const sleepGrid = sleepSection.createDiv({ cls: 'journey-sleep-grid' });
+    // Render discovery question at bottom of Hero tab
+    renderDiscoveryQuestion(container) {
+        const s = this.plugin.settings;
+        const discoveryService = new DiscoveryService(this.plugin);
 
-        SLEEP_QUALITY.forEach(sleep => {
-            const sleepBtn = sleepGrid.createEl('button', { cls: 'journey-sleep-btn' });
-            const restore = sleep.hpRestore >= 0 ? `+${sleep.hpRestore}` : sleep.hpRestore;
-            sleepBtn.innerHTML = `
-                <span class="sleep-icon">${sleep.icon}</span>
-                <span class="sleep-label">${sleep.label}</span>
-                <span class="sleep-hp">${restore} HP</span>
-            `;
-            sleepBtn.onclick = async () => {
-                await this.logSleep(sleep);
-            };
+        // Get current question (core or AI-generated)
+        let currentQuestion = discoveryService.getCurrentQuestion(QUESTION_BANK, DOMAIN_ORDER);
+
+        // If core questions done, need to generate AI question
+        if (currentQuestion && currentQuestion.needsAiGeneration) {
+            // Show loading state while generating
+            const loadingBox = container.createDiv({ cls: 'journey-discovery-question ai-generating' });
+            loadingBox.createEl('h4', { text: '🤖 Generating New Question...' });
+
+            const totalAnswered = discoveryService.getTotalAnsweredQuestions();
+            loadingBox.createEl('p', {
+                text: `You've completed ${totalAnswered} questions! Generating a personalized question for deeper discovery...`,
+                cls: 'journey-discovery-message'
+            });
+
+            // Generate AI question
+            this.generateAndShowAiQuestion(container, discoveryService);
+            return;
+        }
+
+        if (!currentQuestion) {
+            // Fallback - should not happen normally
+            const completeBox = container.createDiv({ cls: 'journey-discovery-question complete' });
+            completeBox.createEl('h4', { text: '✨ Keep Exploring!' });
+            completeBox.createEl('p', {
+                text: 'Your journey of self-discovery continues. Check back soon for more questions!',
+                cls: 'journey-discovery-message'
+            });
+            return;
+        }
+
+        // Show the question
+        const isAiQuestion = currentQuestion.isAiGenerated || currentQuestion.isFallback;
+        const questionBox = container.createDiv({
+            cls: `journey-discovery-question ${isAiQuestion ? 'ai-question' : ''}`
         });
 
-        // ===== 3. HOW ARE YOU FEELING TODAY =====
-        const moodSection = container.createDiv({ cls: 'journey-daily-checkin' });
-        moodSection.createEl('h4', { text: '😊 How are you feeling today?' });
-        const moodGrid = moodSection.createDiv({ cls: 'journey-mood-grid-2col' });
-
-        MOOD_OPTIONS.forEach(mood => {
-            const isActive = s.lastMood?.mood === mood.id;
-            const moodBtn = moodGrid.createEl('button', {
-                cls: `journey-mood-card ${isActive ? 'active' : ''}`
+        // Header based on question type
+        const totalAnswered = discoveryService.getTotalAnsweredQuestions();
+        if (isAiQuestion) {
+            questionBox.createEl('h4', { text: '🤖 Personalized Discovery' });
+            questionBox.createDiv({
+                cls: 'journey-discovery-progress',
+                text: `Question ${totalAnswered + 1} • Exploring your growth areas`
             });
-            const energyText = mood.energyBonus >= 0 ? `+${mood.energyBonus}` : mood.energyBonus;
-            moodBtn.innerHTML = `
-                <span class="mood-card-icon">${mood.icon}</span>
-                <span class="mood-card-label">${mood.label}</span>
-                <span class="mood-card-energy">${energyText} ⚡</span>
-            `;
-            moodBtn.onclick = async () => {
-                s.energy = Math.max(0, Math.min(s.maxEnergy || 100, (s.energy || 100) + mood.energyBonus));
+        } else {
+            questionBox.createEl('h4', { text: '✨ Discovery Question' });
+            questionBox.createDiv({
+                cls: 'journey-discovery-progress',
+                text: `Question ${totalAnswered + 1} of 37+ • Core Assessment`
+            });
+        }
 
-                // Log to mood history
-                if (!s.moodLog) s.moodLog = [];
-                s.moodLog.unshift({
-                    moodId: mood.id,
-                    timestamp: new Date().toISOString(),
-                    energyBonus: mood.energyBonus
-                });
-                s.moodLog = s.moodLog.slice(0, 30);
+        // Question domain hint (subtle)
+        const domain = DEFAULT_DOMAINS.find(d => d.id === currentQuestion.domain);
+        if (domain) {
+            questionBox.createDiv({
+                cls: 'journey-discovery-domain-hint',
+                text: `${domain.icon} ${domain.name}`
+            });
+        }
 
-                s.lastMood = { mood: mood.id, date: new Date().toISOString() };
+        questionBox.createEl('p', {
+            text: `"${currentQuestion.text}"`,
+            cls: 'journey-discovery-question-text'
+        });
 
-                // Log to Chronicle
-                this.plugin.logActivity('mood', `Feeling ${mood.label}`, {
-                    mood: `${mood.icon} ${mood.label}`,
-                    energyGain: mood.energyBonus >= 0 ? mood.energyBonus : undefined,
-                    energyLost: mood.energyBonus < 0 ? Math.abs(mood.energyBonus) : undefined
-                });
+        if (currentQuestion.hint) {
+            questionBox.createDiv({
+                cls: 'journey-discovery-hint',
+                text: `💡 ${currentQuestion.hint}`
+            });
+        }
 
-                await this.plugin.saveSettings();
-                new Notice(`${mood.icon} ${mood.label}! Energy ${energyText}`);
+        // Likert scale buttons
+        const likertContainer = questionBox.createDiv({ cls: 'journey-discovery-likert' });
+        const labels = [
+            { value: 1, emoji: '😟', label: 'Strongly Disagree' },
+            { value: 2, emoji: '😕', label: 'Disagree' },
+            { value: 3, emoji: '😐', label: 'Neutral' },
+            { value: 4, emoji: '🙂', label: 'Agree' },
+            { value: 5, emoji: '😊', label: 'Strongly Agree' }
+        ];
+
+        labels.forEach(opt => {
+            const btn = likertContainer.createEl('button', {
+                cls: 'journey-likert-btn',
+                text: opt.emoji
+            });
+            btn.createDiv({ cls: 'journey-likert-value', text: opt.value.toString() });
+
+            btn.onclick = async () => {
+                // Disable all buttons
+                likertContainer.querySelectorAll('button').forEach(b => b.disabled = true);
+                btn.classList.add('selected');
+
+                // Answer the question (pass currentQuestion for AI questions)
+                const result = await discoveryService.answerQuestion(
+                    currentQuestion.id,
+                    opt.value,
+                    QUESTION_BANK,
+                    currentQuestion
+                );
+
+                if (result.success && result.domainDiscovered) {
+                    // Show domain discovery celebration
+                    const domainInfo = DEFAULT_DOMAINS.find(d => d.id === result.domainId);
+                    if (domainInfo) {
+                        new Notice(`🎉 New domain discovered: ${domainInfo.icon} ${domainInfo.name}!`);
+                    }
+                }
+
+                // Refresh the view
                 this.render();
             };
         });
 
-        // ===== 4. COLLAPSIBLE SECTIONS =====
-        // Arena & Boss Fights (FIRST - above Journal)
-        this.renderCollapsibleSection(container, 'arena', '🐉 Arena & Boss Fights', () => this.renderArenaSection(container));
+        // Skip button (only for core questions)
+        if (!isAiQuestion) {
+            const skipRow = questionBox.createDiv({ cls: 'journey-discovery-skip' });
+            const skipBtn = skipRow.createEl('button', {
+                text: 'Skip for now',
+                cls: 'journey-mini-btn secondary'
+            });
+            skipBtn.onclick = async () => {
+                await discoveryService.skipQuestion(currentQuestion.id);
+                this.render();
+            };
+        }
+    }
 
-        // Quests & Habits Section
-        this.renderCollapsibleSection(container, 'quests', '⚔️ Quests & Habits', () => this.renderQuestsSection(container));
+    // Get motivational quote/suggestion for skill improvement
+    getSkillQuote(skill) {
+        const quotes = {
+            vocation: [
+                "Every expert was once a beginner. Keep practicing!",
+                "Your craft improves with each hour invested.",
+                "Small daily improvements lead to mastery.",
+                "The professional practices even when they don't feel like it.",
+                "Excellence is not an act, but a habit."
+            ],
+            mind: [
+                "A curious mind is always learning.",
+                "Challenge your brain - it grows stronger with use.",
+                "Knowledge compounds over time.",
+                "The more you learn, the more connections you make.",
+                "Every new skill opens new doors."
+            ],
+            body: [
+                "Your body adapts to what you ask of it.",
+                "Consistency beats intensity over time.",
+                "Movement is medicine for the mind and body.",
+                "Progress, not perfection.",
+                "Small steps lead to big transformations."
+            ],
+            spirit: [
+                "Connection is the currency of life.",
+                "Teaching others deepens your own understanding.",
+                "Community amplifies individual efforts.",
+                "Sharing knowledge multiplies it.",
+                "Together we go further."
+            ]
+        };
 
-        // Journal Section (LAST)
-        this.renderCollapsibleSection(container, 'journal', '📓 Journal & Skills', () => this.renderJournalSection(container));
+        const categoryQuotes = quotes[skill.category] || quotes.vocation;
+        const index = (skill.level + skill.totalPracticeCount) % categoryQuotes.length;
+        return categoryQuotes[index];
+    }
+
+    // Practice a skill - add XP to skill and hero
+    async practiceSkill(skill, skillService) {
+        const practiceXP = 15; // XP gained per practice
+        const heroXP = 5; // XP for hero profile
+        const goldReward = 2;
+
+        // Add XP to skill
+        const result = skillService.addSkillXp(skill.id, practiceXP);
+
+        // Add XP to hero
+        this.plugin.gainXp(heroXP, goldReward, skill.category === 'vocation' ? 'livingStandards' :
+            skill.category === 'mind' ? 'education' :
+            skill.category === 'body' ? 'health' : 'communityVitality');
+
+        // Log the activity
+        this.plugin.logActivity('skill_practice', `Practiced ${skill.name}`, {
+            skill: skill.name,
+            xp: practiceXP,
+            heroXp: heroXP
+        });
+
+        // Show feedback
+        if (result.levelsGained > 0) {
+            new Notice(`🎉 ${skill.name} leveled up to Lv. ${result.skill.level}! +${practiceXP} Skill XP | +${heroXP} Hero XP`);
+        } else {
+            new Notice(`⚡ Practiced ${skill.name}! +${practiceXP} Skill XP | +${heroXP} Hero XP`);
+        }
+
+        await this.plugin.saveSettings();
+        this.render();
+    }
+
+    // Show modal to merge/combine skills
+    showMergeSkillModal(sourceSkill, targetSkills, skillService) {
+        const modal = new Modal(this.app);
+        modal.titleEl.setText(`🔗 Merge ${sourceSkill.name}`);
+
+        const content = modal.contentEl;
+        content.createEl('p', {
+            text: `Select a skill to merge "${sourceSkill.name}" into. The source skill's XP will be transferred.`,
+            cls: 'journey-modal-desc'
+        });
+
+        const skillList = content.createDiv({ cls: 'journey-merge-skill-list' });
+
+        targetSkills.forEach(targetSkill => {
+            const skillOption = skillList.createDiv({ cls: 'journey-merge-skill-option' });
+            skillOption.innerHTML = `
+                <span class="journey-merge-skill-name">${targetSkill.name}</span>
+                <span class="journey-merge-skill-level">Lv. ${targetSkill.level}</span>
+            `;
+            skillOption.onclick = async () => {
+                if (confirm(`Merge "${sourceSkill.name}" into "${targetSkill.name}"?\n\nThis will delete ${sourceSkill.name} and transfer its XP.`)) {
+                    const result = skillService.mergeSkills(sourceSkill.id, targetSkill.id);
+                    if (result.success) {
+                        await this.plugin.saveSettings();
+                        new Notice(`🔗 Merged into ${result.mergedSkill.name} (now Lv. ${result.mergedSkill.level})!`);
+                        modal.close();
+                        this.render();
+                    }
+                }
+            };
+        });
+
+        const cancelBtn = content.createEl('button', {
+            text: 'Cancel',
+            cls: 'journey-modal-cancel-btn'
+        });
+        cancelBtn.onclick = () => modal.close();
+
+        modal.open();
+    }
+
+    // Generate AI question and update the view
+    async generateAndShowAiQuestion(container, discoveryService) {
+        try {
+            const s = this.plugin.settings;
+            const aiQuestion = await discoveryService.generateAiQuestion(DOMAIN_ORDER, s.domains);
+
+            if (aiQuestion) {
+                // Store the generated question
+                discoveryService.setPendingAiQuestion(aiQuestion);
+                await this.plugin.saveSettings();
+            }
+
+            // Re-render to show the question
+            this.render();
+        } catch (e) {
+            console.error('AI question generation failed:', e);
+            new Notice('Could not generate question. Using fallback.');
+            this.render();
+        }
+    }
+
+    // ============================================================================
+    // ADVENTURE TAB - Reorganized Sections
+    // ============================================================================
+    renderAdventure(container) {
+        container.createEl('h3', { text: '⚔️ Your Adventure' });
+
+        // 1. Rest & Recovery (Top - check in first)
+        this.renderCollapsibleSection(container, 'rest', '🏨 Rest & Recovery', () => this.renderRestSection(container));
+
+        // 2. Journal Section
+        this.renderCollapsibleSection(container, 'journal', '📓 Journal', () => this.renderJournalSection(container));
+
+        // 3. Boss Fights
+        this.renderCollapsibleSection(container, 'arena', '🐉 Boss Fights', () => this.renderBossFightsSection(container));
+
+        // 4. Quests (to help defeat bosses)
+        this.renderCollapsibleSection(container, 'quests', '📜 Quests', () => this.renderQuestsSection(container));
+
+        // 5. Daily Habits
+        this.renderCollapsibleSection(container, 'habits', '✅ Daily Habits', () => this.renderHabitsSection(container));
+
+        // 6. Bad Habits (to track and reduce)
+        this.renderCollapsibleSection(container, 'badhabits', '⚠️ Bad Habits', () => this.renderBadHabitsSection(container));
     }
 
     renderCollapsibleSection(container, sectionId, title, renderContent) {
@@ -1134,35 +1962,19 @@ class JourneyView extends ItemView {
     renderJournalSection(container) {
         const s = this.plugin.settings;
         const js = s.journalSettings || {};
-        const hasApiKey = !!s.ai?.openRouterApiKey;
 
-        // Status info
         const statusCard = container.createDiv({ cls: 'journey-journal-status' });
         const lastSync = js.lastSyncDate ? new Date(js.lastSyncDate).toLocaleString() : 'Never';
-        const folderStatus = js.scanMode === 'folder' ? `📁 ${js.journalFolder || 'Journal'}` : `🏷️ ${js.journalTag || '#journal'}`;
-        const aiStatus = hasApiKey ? '✅ AI + Skills' : '⚠️ Basic (no API key)';
-
         statusCard.innerHTML = `
-            <div class="journey-journal-stat">
-                <span class="label">Source:</span>
-                <span class="value">${folderStatus}</span>
-            </div>
-            <div class="journey-journal-stat">
-                <span class="label">Mode:</span>
-                <span class="value">${aiStatus}</span>
-            </div>
             <div class="journey-journal-stat">
                 <span class="label">Last Sync:</span>
                 <span class="value">${lastSync}</span>
             </div>
         `;
 
-        // Sync buttons row
-        const btnRow = container.createDiv({ cls: 'journey-btn-row' });
-
-        const syncBtn = btnRow.createEl('button', {
+        const syncBtn = container.createEl('button', {
             text: '🔄 Sync Journals',
-            cls: 'journey-sync-btn primary'
+            cls: 'journey-full-width-btn primary'
         });
         syncBtn.onclick = async () => {
             syncBtn.disabled = true;
@@ -1172,273 +1984,732 @@ class JourneyView extends ItemView {
                 this.render();
             } catch (e) {
                 new Notice(`❌ Sync failed: ${e.message}`);
-                syncBtn.disabled = false;
-                syncBtn.textContent = '🔄 Sync Journals';
-            }
-        };
-
-        // Reset sync button (to re-analyze all journals)
-        const resetSyncBtn = btnRow.createEl('button', {
-            text: '🔃 Reset & Resync All',
-            cls: 'journey-sync-btn secondary'
-        });
-        resetSyncBtn.title = 'Clear sync history to re-analyze all journal files and rediscover skills';
-        resetSyncBtn.onclick = async () => {
-            if (confirm('Reset sync and re-analyze ALL journal files?\n\nThis will:\n• Re-process all journals for XP/HP/Energy\n• Re-discover skills from all journals\n\nExisting skills will gain more XP if mentioned again.')) {
-                js.lastSyncDate = null;
-                js.recentAnalysis = [];
-                // Also clear analyzed journals for skill discovery
-                if (s.skillsSettings) {
-                    s.skillsSettings.analyzedJournals = [];
-                }
-                await this.plugin.saveSettings();
-                new Notice('🔃 Sync reset! Click "Sync Journals" to re-analyze all.');
-                this.render();
             }
         };
 
         // Recent Analysis
         if (js.recentAnalysis && js.recentAnalysis.length > 0) {
-            container.createEl('h5', { text: '📊 Recent Analysis' });
+            container.createEl('h5', { text: '📊 Recent' });
             const analysisList = container.createDiv({ cls: 'journey-analysis-list' });
             js.recentAnalysis.slice(0, 3).forEach(a => {
                 const item = analysisList.createDiv({ cls: 'journey-analysis-item' });
-                const sentiment = a.sentiment > 0 ? '😊' : a.sentiment < 0 ? '😔' : '😐';
-                item.innerHTML = `<span>${sentiment} ${a.fileName}</span><span>+${a.xp || 0} XP</span>`;
+                item.innerHTML = `<span>${a.fileName}</span><span>+${a.xp || 0} XP</span>`;
             });
-        }
-
-        // Tip if no API key
-        if (!hasApiKey) {
-            const tip = container.createDiv({ cls: 'journey-tip' });
-            tip.innerHTML = `💡 <strong>Tip:</strong> Add OpenRouter API key in Settings for AI analysis and automatic skill discovery from journals.`;
         }
     }
 
+    // Boss Fights Section with Fight and Run Away Buttons
+    renderBossFightsSection(container) {
+        const s = this.plugin.settings;
+        const activeBosses = (s.bossFights || []).filter(b => !b.defeated);
+
+        if (activeBosses.length === 0) {
+            container.createDiv({ cls: 'journey-empty-state' });
+            container.querySelector('.journey-empty-state').innerHTML = `
+                <p>No active boss fights</p>
+                <p class="journey-empty-hint">Create a boss to represent a challenge you want to overcome!</p>
+            `;
+        } else {
+            activeBosses.forEach(boss => {
+                const hpPercent = Math.max(0, (boss.currentHp / boss.maxHp) * 100);
+                const bossCard = container.createDiv({ cls: 'journey-boss-card' });
+
+                // Boss Header
+                const bossHeader = bossCard.createDiv({ cls: 'journey-boss-header' });
+                bossHeader.innerHTML = `
+                    <span class="journey-boss-icon-large">${boss.icon || '🐉'}</span>
+                    <div class="journey-boss-info">
+                        <span class="journey-boss-name-large">${boss.name}</span>
+                        <span class="journey-boss-desc">${boss.description || 'A formidable challenge'}</span>
+                    </div>
+                `;
+
+                // Boss HP Bar
+                const hpBar = bossCard.createDiv({ cls: 'journey-boss-hp-section' });
+                hpBar.innerHTML = `
+                    <div class="journey-boss-hp-bar">
+                        <div class="journey-boss-hp-fill" style="width: ${hpPercent}%"></div>
+                    </div>
+                    <span class="journey-boss-hp-text">${boss.currentHp} / ${boss.maxHp} HP</span>
+                `;
+
+                // Action Buttons Row
+                const actionRow = bossCard.createDiv({ cls: 'journey-boss-action-row' });
+
+                // Fight Button
+                const fightBtn = actionRow.createEl('button', {
+                    text: '⚔️ Fight!',
+                    cls: 'journey-boss-fight-btn'
+                });
+                fightBtn.onclick = async () => {
+                    await this.fightBoss(boss);
+                };
+
+                // Run Away Button (increases boss HP)
+                const runBtn = actionRow.createEl('button', {
+                    text: '🏃 Run Away',
+                    cls: 'journey-boss-run-btn'
+                });
+                runBtn.onclick = async () => {
+                    const hpGain = 5 + Math.floor(Math.random() * 10); // 5-15 HP gain
+                    boss.currentHp = Math.min(boss.maxHp, boss.currentHp + hpGain);
+                    await this.plugin.saveSettings();
+                    this.plugin.logActivity('boss_runaway', `Ran away from ${boss.name}`, { bossHpGained: hpGain });
+                    new Notice(`🏃 You ran away! ${boss.name} recovers +${hpGain} HP (${boss.currentHp}/${boss.maxHp})`);
+                    this.render();
+                };
+
+                // Count related quests
+                const bossQuests = (s.quests || []).filter(q => !q.completed && q.bossId === boss.id);
+                if (bossQuests.length > 0) {
+                    const questHint = bossCard.createDiv({ cls: 'journey-boss-quest-hint' });
+                    questHint.innerHTML = `<span>📜 ${bossQuests.length} quest${bossQuests.length > 1 ? 's' : ''} to help defeat this boss</span>`;
+                }
+            });
+        }
+
+        // Create New Boss Button
+        const createBossBtn = container.createEl('button', {
+            text: '+ Create New Boss',
+            cls: 'journey-full-width-btn'
+        });
+        createBossBtn.onclick = () => new NewBossFightModal(this.app, this.plugin, () => this.render()).open();
+    }
+
+    // Quests Section - Separate from Boss Fights
     renderQuestsSection(container) {
         const s = this.plugin.settings;
+        const quests = s.quests || [];
+        const activeBosses = (s.bossFights || []).filter(b => !b.defeated);
+        const activeQuests = quests.filter(q => !q.completed);
 
-        // ===== GOOD HABITS (+HP) =====
-        container.createEl('h5', { text: '✅ Good Habits - Click to Complete (+HP)' });
-        const habitsList = container.createDiv({ cls: 'journey-habit-grid' });
+        container.createEl('p', {
+            text: 'Complete quests to damage bosses and earn rewards!',
+            cls: 'journey-section-desc'
+        });
+
+        if (activeQuests.length === 0) {
+            container.createDiv({ cls: 'journey-empty', text: 'No active quests. Add quests to help defeat bosses!' });
+        } else {
+            // Group quests by boss
+            const questsByBoss = {};
+            const questsNoBoss = [];
+
+            activeQuests.forEach(quest => {
+                if (quest.bossId) {
+                    if (!questsByBoss[quest.bossId]) questsByBoss[quest.bossId] = [];
+                    questsByBoss[quest.bossId].push(quest);
+                } else {
+                    questsNoBoss.push(quest);
+                }
+            });
+
+            // Render quests grouped by boss
+            activeBosses.forEach(boss => {
+                const bossQuests = questsByBoss[boss.id] || [];
+                if (bossQuests.length === 0) return;
+
+                const bossGroup = container.createDiv({ cls: 'journey-quest-group' });
+                bossGroup.createDiv({
+                    cls: 'journey-quest-group-header',
+                    text: `${boss.icon || '🐉'} For: ${boss.name}`
+                });
+
+                const questList = bossGroup.createDiv({ cls: 'journey-quest-list' });
+                bossQuests.forEach(quest => {
+                    this.renderQuestRow(questList, quest, boss);
+                });
+            });
+
+            // Render quests without boss
+            if (questsNoBoss.length > 0) {
+                const generalGroup = container.createDiv({ cls: 'journey-quest-group' });
+                generalGroup.createDiv({
+                    cls: 'journey-quest-group-header',
+                    text: '🎯 General Quests'
+                });
+
+                const questList = generalGroup.createDiv({ cls: 'journey-quest-list' });
+                questsNoBoss.forEach(quest => {
+                    this.renderQuestRow(questList, quest, null);
+                });
+            }
+        }
+
+        // Add Quest Buttons
+        const addBtnRow = container.createDiv({ cls: 'journey-quest-add-row' });
+
+        // If there are bosses, show option to add quest for specific boss
+        if (activeBosses.length > 0) {
+            const addForBossBtn = addBtnRow.createEl('button', {
+                text: '+ Quest for Boss',
+                cls: 'journey-mini-btn'
+            });
+            addForBossBtn.onclick = () => {
+                this.showSelectBossForQuestModal(activeBosses);
+            };
+        }
+
+        const addGeneralBtn = addBtnRow.createEl('button', {
+            text: '+ General Quest',
+            cls: 'journey-mini-btn'
+        });
+        addGeneralBtn.onclick = () => {
+            new NewQuestModal(this.app, this.plugin, () => this.render()).open();
+        };
+
+        // Generate Quest Button (AI or random)
+        const generateBtn = container.createEl('button', {
+            text: '✨ Generate Quest Ideas',
+            cls: 'journey-full-width-btn secondary'
+        });
+        generateBtn.onclick = () => {
+            this.generateQuestIdeas(activeBosses);
+        };
+    }
+
+    // Render single quest row
+    renderQuestRow(container, quest, boss) {
+        const s = this.plugin.settings;
+        const questRow = container.createDiv({ cls: 'journey-quest-row' });
+
+        // Quest rewards (default based on difficulty or explicit)
+        const xpReward = quest.xpReward || (quest.difficulty === 'hard' ? 30 : quest.difficulty === 'easy' ? 10 : 20);
+        const goldReward = quest.goldReward || (quest.difficulty === 'hard' ? 15 : quest.difficulty === 'easy' ? 5 : 10);
+
+        const completeBtn = questRow.createEl('button', { cls: 'journey-complete-btn', text: '✓' });
+        completeBtn.onclick = async () => {
+            const realIndex = s.quests.indexOf(quest);
+
+            // Give hero rewards
+            this.plugin.gainXp(xpReward, goldReward);
+            this.plugin.logActivity('quest_complete', `Completed: ${quest.name}`, {
+                xp: xpReward,
+                gold: goldReward,
+                bossDamage: quest.bossDamage || 0
+            });
+
+            // Mark quest as completed
+            quest.completed = true;
+            quest.completedAt = new Date().toISOString();
+
+            // Damage the boss when quest completed
+            if (boss) {
+                const damage = quest.bossDamage || 20;
+                boss.currentHp = Math.max(0, boss.currentHp - damage);
+                if (boss.currentHp <= 0) {
+                    boss.defeated = true;
+                    // Bonus for defeating boss
+                    const bossXp = 50;
+                    const bossGold = 25;
+                    this.plugin.gainXp(bossXp, bossGold);
+                    this.plugin.logActivity('boss_defeated', `Defeated ${boss.name}!`, { xp: bossXp, gold: bossGold });
+                    new Notice(`🎉 ${boss.name} DEFEATED!\n+${xpReward + bossXp} XP, +${goldReward + bossGold} Gold`);
+                } else {
+                    new Notice(`⚔️ Quest done! +${xpReward} XP, +${goldReward} Gold\n${boss.name} takes ${damage} damage (${boss.currentHp}/${boss.maxHp} HP)`);
+                }
+            } else {
+                new Notice(`✅ Quest done! +${xpReward} XP, +${goldReward} Gold`);
+            }
+
+            await this.plugin.saveSettings();
+            this.render();
+        };
+
+        const questInfo = questRow.createDiv({ cls: 'journey-quest-info' });
+        questInfo.innerHTML = `
+            <span class="journey-quest-name">${quest.name}</span>
+            <span class="journey-quest-rewards">
+                <span class="journey-quest-xp">+${xpReward} XP</span>
+                <span class="journey-quest-gold">+${goldReward} 💰</span>
+                ${quest.bossDamage ? `<span class="journey-quest-damage">⚔️ ${quest.bossDamage} dmg</span>` : ''}
+            </span>
+        `;
+
+        const deleteBtn = questRow.createEl('button', { cls: 'journey-quest-delete', text: '×' });
+        deleteBtn.onclick = async () => {
+            if (confirm(`Delete quest: ${quest.name}?`)) {
+                const realIndex = s.quests.indexOf(quest);
+                s.quests.splice(realIndex, 1);
+                await this.plugin.saveSettings();
+                this.render();
+            }
+        };
+    }
+
+    // Show modal to select boss for new quest
+    showSelectBossForQuestModal(bosses) {
+        const modal = new Modal(this.app);
+        modal.titleEl.setText('📜 Add Quest for Boss');
+
+        const content = modal.contentEl;
+        content.createEl('p', { text: 'Select a boss to create a quest for:', cls: 'journey-modal-desc' });
+
+        const bossList = content.createDiv({ cls: 'journey-boss-select-list' });
+        bosses.forEach(boss => {
+            const bossOption = bossList.createDiv({ cls: 'journey-boss-select-option' });
+            bossOption.innerHTML = `
+                <span class="journey-boss-select-icon">${boss.icon || '🐉'}</span>
+                <span class="journey-boss-select-name">${boss.name}</span>
+                <span class="journey-boss-select-hp">${boss.currentHp}/${boss.maxHp} HP</span>
+            `;
+            bossOption.onclick = () => {
+                modal.close();
+                new NewQuestModal(this.app, this.plugin, () => this.render(), boss.id).open();
+            };
+        });
+
+        modal.open();
+    }
+
+    // Generate quest ideas - AI-enhanced or template-based
+    async generateQuestIdeas(bosses) {
+        const s = this.plugin.settings;
+        const hasApiKey = !!s.ai?.openRouterApiKey;
+
+        // Show modal first
+        const modal = new Modal(this.app);
+        modal.titleEl.setText('✨ Quest Ideas');
+        const content = modal.contentEl;
+
+        if (bosses.length === 0) {
+            content.createEl('p', { text: 'Create a boss first to generate related quests!' });
+            const closeBtn = content.createEl('button', { text: 'Close', cls: 'journey-modal-cancel-btn' });
+            closeBtn.onclick = () => modal.close();
+            modal.open();
+            return;
+        }
+
+        // If AI is available, use AI generation
+        if (hasApiKey) {
+            content.createDiv({ cls: 'journey-quest-loading', text: '🤖 AI is generating personalized quests...' });
+            modal.open();
+
+            try {
+                const questIdeas = await this.generateAIQuests(bosses);
+                content.empty();
+                this.renderQuestIdeasModal(content, modal, questIdeas);
+            } catch (e) {
+                console.error('AI quest generation failed:', e);
+                content.empty();
+                content.createEl('p', { text: '⚠️ AI generation failed. Using templates instead.', cls: 'journey-warning' });
+                const templateQuests = this.getTemplateQuests(bosses);
+                this.renderQuestIdeasModal(content, modal, templateQuests);
+            }
+        } else {
+            // Use template-based generation
+            const templateQuests = this.getTemplateQuests(bosses);
+            this.renderQuestIdeasModal(content, modal, templateQuests);
+            modal.open();
+        }
+    }
+
+    // Generate quests using AI
+    async generateAIQuests(bosses) {
+        const s = this.plugin.settings;
+        const aiService = new AIService(this.plugin);
+
+        // Build context about bosses and user
+        const bossContext = bosses.map(b =>
+            `- ${b.icon || '🐉'} "${b.name}": ${b.description || 'A challenge to overcome'} (${b.currentHp}/${b.maxHp} HP remaining)`
+        ).join('\n');
+
+        const userContext = s.characterProfile?.name
+            ? `The hero "${s.characterProfile.name}" (Level ${s.level})`
+            : `A Level ${s.level} hero`;
+
+        const prompt = `You are a quest designer for a personal development game. ${userContext} is facing these bosses (challenges):
+
+${bossContext}
+
+Generate 2-3 specific, actionable quests for EACH boss. Each quest should be:
+1. A clear, concrete action (not vague like "work on it")
+2. Completable in one session (30 min to 2 hours)
+3. Directly related to defeating that specific boss/challenge
+4. Varied in approach (research, action, reflection, planning)
+
+Format your response as JSON array:
+[
+  {"bossId": "boss_id_here", "bossName": "Boss Name", "name": "Quest description", "bossDamage": 15, "xpReward": 20, "goldReward": 10, "difficulty": "easy|medium|hard"},
+  ...
+]
+
+Rewards by difficulty:
+- easy: bossDamage=10, xpReward=10, goldReward=5
+- medium: bossDamage=20, xpReward=20, goldReward=10
+- hard: bossDamage=30, xpReward=30, goldReward=15
+
+Only output the JSON array, no other text.`;
+
+        const response = await aiService.chat(prompt, false, false);
+
+        // Parse JSON from response
+        try {
+            // Extract JSON from response (might have markdown code blocks)
+            let jsonStr = response;
+            if (response.includes('```')) {
+                const match = response.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+                if (match) jsonStr = match[1];
+            }
+
+            const quests = JSON.parse(jsonStr.trim());
+
+            // Map bossId to actual boss and ensure rewards
+            return quests.map(q => {
+                const boss = bosses.find(b => b.name === q.bossName || b.id === q.bossId);
+                const difficulty = q.difficulty || 'medium';
+                return {
+                    name: q.name,
+                    bossId: boss?.id || bosses[0]?.id,
+                    bossName: q.bossName || boss?.name || 'Unknown',
+                    bossDamage: q.bossDamage || (difficulty === 'hard' ? 30 : difficulty === 'easy' ? 10 : 20),
+                    xpReward: q.xpReward || (difficulty === 'hard' ? 30 : difficulty === 'easy' ? 10 : 20),
+                    goldReward: q.goldReward || (difficulty === 'hard' ? 15 : difficulty === 'easy' ? 5 : 10),
+                    difficulty: difficulty,
+                    isAI: true
+                };
+            });
+        } catch (parseError) {
+            console.error('Failed to parse AI quest response:', parseError);
+            throw new Error('Could not parse AI response');
+        }
+    }
+
+    // Get template-based quests (fallback)
+    getTemplateQuests(bosses) {
+        const questIdeas = [];
+
+        bosses.forEach(boss => {
+            const bossRelatedQuests = [
+                { name: `Research ${boss.name}'s weakness`, bossDamage: 15, xpReward: 10, goldReward: 5, difficulty: 'easy' },
+                { name: `Create a detailed plan to defeat ${boss.name}`, bossDamage: 20, xpReward: 20, goldReward: 10, difficulty: 'medium' },
+                { name: `Take one small action toward defeating ${boss.name}`, bossDamage: 10, xpReward: 10, goldReward: 5, difficulty: 'easy' },
+                { name: `Spend 30 min focused session on ${boss.name}`, bossDamage: 25, xpReward: 25, goldReward: 12, difficulty: 'medium' },
+                { name: `Break ${boss.name} into 3 smaller tasks`, bossDamage: 15, xpReward: 15, goldReward: 8, difficulty: 'easy' },
+                { name: `Ask someone for advice about ${boss.name}`, bossDamage: 20, xpReward: 20, goldReward: 10, difficulty: 'medium' },
+                { name: `Complete the hardest part of ${boss.name}`, bossDamage: 30, xpReward: 35, goldReward: 18, difficulty: 'hard' },
+                { name: `Set a deadline for defeating ${boss.name}`, bossDamage: 10, xpReward: 10, goldReward: 5, difficulty: 'easy' },
+                { name: `Work on ${boss.name} for 1 hour without distractions`, bossDamage: 30, xpReward: 30, goldReward: 15, difficulty: 'hard' },
+                { name: `Identify 3 obstacles blocking ${boss.name}`, bossDamage: 15, xpReward: 15, goldReward: 8, difficulty: 'easy' }
+            ];
+
+            // Pick 3 random quests for each boss
+            const shuffled = bossRelatedQuests.sort(() => 0.5 - Math.random());
+            shuffled.slice(0, 3).forEach(q => {
+                questIdeas.push({ ...q, bossId: boss.id, bossName: boss.name, isAI: false });
+            });
+        });
+
+        return questIdeas;
+    }
+
+    // Render quest ideas in modal
+    renderQuestIdeasModal(content, modal, questIdeas) {
+        const s = this.plugin.settings;
+
+        if (questIdeas.length === 0) {
+            content.createEl('p', { text: 'No quest ideas generated. Try again!' });
+        } else {
+            const isAI = questIdeas.some(q => q.isAI);
+            content.createEl('p', {
+                text: isAI ? '🤖 AI-generated quests based on your challenges:' : 'Click to add quest:',
+                cls: 'journey-modal-desc'
+            });
+
+            const ideaList = content.createDiv({ cls: 'journey-quest-idea-list' });
+
+            // Group by boss
+            const groupedByBoss = {};
+            questIdeas.forEach(idea => {
+                if (!groupedByBoss[idea.bossName]) groupedByBoss[idea.bossName] = [];
+                groupedByBoss[idea.bossName].push(idea);
+            });
+
+            Object.entries(groupedByBoss).forEach(([bossName, ideas]) => {
+                const bossGroup = ideaList.createDiv({ cls: 'journey-quest-idea-group' });
+                bossGroup.createDiv({ cls: 'journey-quest-idea-boss', text: `🐉 ${bossName}` });
+
+                ideas.forEach(idea => {
+                    const ideaRow = bossGroup.createDiv({ cls: 'journey-quest-idea-row' });
+                    const difficultyColor = idea.difficulty === 'easy' ? '#27ae60' :
+                                           idea.difficulty === 'hard' ? '#e74c3c' : '#f39c12';
+                    ideaRow.innerHTML = `
+                        <span class="journey-quest-idea-name">${idea.name}</span>
+                        <span class="journey-quest-idea-meta">
+                            <span style="color: ${difficultyColor}">${idea.difficulty || 'medium'}</span> •
+                            <span class="journey-quest-idea-rewards">+${idea.xpReward} XP, +${idea.goldReward} 💰</span> •
+                            ⚔️ ${idea.bossDamage} dmg
+                        </span>
+                    `;
+                    ideaRow.onclick = async () => {
+                        s.quests = s.quests || [];
+                        s.quests.push({
+                            id: `quest_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                            name: idea.name,
+                            bossId: idea.bossId,
+                            bossDamage: idea.bossDamage,
+                            xpReward: idea.xpReward,
+                            goldReward: idea.goldReward,
+                            difficulty: idea.difficulty,
+                            completed: false,
+                            isAIGenerated: idea.isAI,
+                            createdAt: new Date().toISOString()
+                        });
+                        await this.plugin.saveSettings();
+                        new Notice(`📜 Added quest: ${idea.name}`);
+                        ideaRow.classList.add('added');
+                        ideaRow.innerHTML += '<span class="journey-quest-added-badge">✓ Added</span>';
+                        ideaRow.onclick = null;
+                    };
+                });
+            });
+
+            // Add all button
+            const addAllBtn = content.createEl('button', {
+                text: `➕ Add All ${questIdeas.length} Quests`,
+                cls: 'journey-full-width-btn primary'
+            });
+            addAllBtn.onclick = async () => {
+                s.quests = s.quests || [];
+                questIdeas.forEach(idea => {
+                    s.quests.push({
+                        id: `quest_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                        name: idea.name,
+                        bossId: idea.bossId,
+                        bossDamage: idea.bossDamage,
+                        xpReward: idea.xpReward,
+                        goldReward: idea.goldReward,
+                        difficulty: idea.difficulty,
+                        completed: false,
+                        isAIGenerated: idea.isAI,
+                        createdAt: new Date().toISOString()
+                    });
+                });
+                await this.plugin.saveSettings();
+                new Notice(`📜 Added ${questIdeas.length} quests!`);
+                modal.close();
+                this.render();
+            };
+        }
+
+        const closeBtn = content.createEl('button', { text: 'Close', cls: 'journey-modal-cancel-btn' });
+        closeBtn.onclick = () => { modal.close(); this.render(); };
+    }
+
+    // Fight boss directly (small damage)
+    async fightBoss(boss) {
+        const damage = 10 + Math.floor(Math.random() * 10); // 10-20 damage
+        boss.currentHp = Math.max(0, boss.currentHp - damage);
+
+        if (boss.currentHp <= 0) {
+            boss.defeated = true;
+            new Notice(`🎉 ${boss.name} DEFEATED! +50 XP, +25 Gold`);
+            this.plugin.gainXp(50, 25);
+            this.plugin.logActivity('boss_defeated', `Defeated ${boss.name}!`, { xp: 50, gold: 25 });
+        } else {
+            new Notice(`⚔️ Hit ${boss.name} for ${damage} damage! (${boss.currentHp}/${boss.maxHp} HP left)`);
+            this.plugin.gainXp(5, 2);
+        }
+
+        await this.plugin.saveSettings();
+        this.render();
+    }
+
+    // Daily Habits Section (Good habits - increase HP/XP)
+    renderHabitsSection(container) {
+        const s = this.plugin.settings;
 
         if (s.habits.length === 0) {
-            habitsList.createDiv({ cls: 'journey-empty', text: 'No good habits yet. Add one!' });
+            container.createDiv({ cls: 'journey-empty', text: 'No habits yet. Add habits to build streaks!' });
         } else {
-            s.habits.forEach((habit, index) => {
-                const hpReward = habit.hpReward || DIFFICULTY[habit.difficulty || 'medium']?.hpReward || 5;
-                const habitRow = habitsList.createDiv({ cls: 'journey-habit-row' });
+            const habitsList = container.createDiv({ cls: 'journey-habits-list' });
 
-                const habitBtn = habitRow.createEl('button', {
-                    cls: `journey-habit-btn good ${habit.completed ? 'completed' : ''}`
+            s.habits.forEach((habit, index) => {
+                const habitCard = habitsList.createDiv({
+                    cls: `journey-habit-card ${habit.completed ? 'completed' : ''}`
                 });
-                habitBtn.innerHTML = `
-                    <span class="habit-icon">${habit.completed ? '✅' : '⬜'}</span>
-                    <span class="habit-name">${habit.name}</span>
-                    <span class="habit-reward">+${hpReward} ❤️</span>
-                    ${habit.streak > 0 ? `<span class="habit-streak">🔥${habit.streak}</span>` : ''}
-                `;
-                habitBtn.disabled = habit.completed;
-                habitBtn.onclick = async () => {
+
+                const checkbox = habitCard.createEl('input', { type: 'checkbox' });
+                checkbox.checked = habit.completed;
+                checkbox.disabled = habit.completed;
+                checkbox.onclick = async () => {
                     if (!habit.completed) {
                         await this.plugin.completeHabit(index);
                         this.render();
                     }
                 };
 
-                // Delete button
-                const deleteBtn = habitRow.createEl('button', { cls: 'journey-delete-btn', text: '×' });
-                deleteBtn.title = 'Delete habit';
-                deleteBtn.onclick = async (e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete habit "${habit.name}"?`)) {
-                        s.habits.splice(index, 1);
-                        await this.plugin.saveSettings();
-                        new Notice(`🗑️ Habit deleted`);
-                        this.render();
-                    }
-                };
-            });
-        }
-
-        const addHabitBtn = container.createEl('button', { text: '+ Add Good Habit', cls: 'journey-mini-btn good' });
-        addHabitBtn.onclick = () => new NewHabitModal(this.app, this.plugin, () => this.render()).open();
-
-        // ===== BAD HABITS (-HP) =====
-        container.createEl('h5', { text: '❌ Bad Habits - Click if you slipped (-HP)' });
-        const badHabitsList = container.createDiv({ cls: 'journey-habit-grid' });
-
-        if (!s.badHabits || s.badHabits.length === 0) {
-            badHabitsList.createDiv({ cls: 'journey-empty', text: 'No bad habits tracked' });
-        } else {
-            s.badHabits.forEach((badHabit, index) => {
-                const hpCost = badHabit.hpCost || 10;
-                const habitRow = badHabitsList.createDiv({ cls: 'journey-habit-row' });
-
-                const badHabitBtn = habitRow.createEl('button', { cls: 'journey-habit-btn bad' });
-                badHabitBtn.innerHTML = `
-                    <span class="habit-icon">😈</span>
-                    <span class="habit-name">${badHabit.name}</span>
-                    <span class="habit-penalty">-${hpCost} ❤️</span>
-                    ${badHabit.triggerCount > 0 ? `<span class="habit-count">(${badHabit.triggerCount}x)</span>` : ''}
+                const habitInfo = habitCard.createDiv({ cls: 'journey-habit-info' });
+                habitInfo.innerHTML = `
+                    <span class="journey-habit-name">${habit.name}</span>
+                    <span class="journey-habit-reward">+${habit.xp || 10} XP, +${habit.hp || 5} HP</span>
                 `;
-                badHabitBtn.onclick = async () => {
-                    await this.plugin.triggerBadHabit(index);
-                    this.render();
-                };
 
-                // Delete button
-                const deleteBtn = habitRow.createEl('button', { cls: 'journey-delete-btn', text: '×' });
-                deleteBtn.title = 'Delete bad habit';
-                deleteBtn.onclick = async (e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete bad habit "${badHabit.name}"?`)) {
-                        s.badHabits.splice(index, 1);
-                        await this.plugin.saveSettings();
-                        new Notice(`🗑️ Bad habit deleted`);
-                        this.render();
-                    }
-                };
-            });
-        }
-
-        const addBadHabitBtn = container.createEl('button', { text: '+ Add Bad Habit', cls: 'journey-mini-btn bad' });
-        addBadHabitBtn.onclick = () => new NewBadHabitModal(this.app, this.plugin, () => this.render()).open();
-
-        // ===== QUESTS =====
-        const activeBosses = (s.bossFights || []).filter(b => !b.defeated);
-        const hasBoss = activeBosses.length > 0;
-        const targetBoss = hasBoss ? activeBosses[0] : null;
-
-        container.createEl('h5', { text: '⚔️ Quests' });
-
-        // Show boss connection if there's an active boss
-        if (hasBoss && targetBoss) {
-            const bossLink = container.createDiv({ cls: 'journey-boss-link' });
-            const bossHpPercent = Math.max(0, (targetBoss.currentHp / targetBoss.maxHp) * 100);
-            bossLink.innerHTML = `
-                <div class="boss-link-header">
-                    <span class="boss-link-icon">${targetBoss.icon || '🐉'}</span>
-                    <span class="boss-link-name">Fighting: ${targetBoss.name}</span>
-                </div>
-                <div class="boss-link-hp">
-                    <div class="boss-link-hp-bar">
-                        <div class="boss-link-hp-fill" style="width: ${bossHpPercent}%"></div>
-                    </div>
-                    <span class="boss-link-hp-text">${targetBoss.currentHp}/${targetBoss.maxHp} HP</span>
-                </div>
-                <div class="boss-link-info">⚔️ Complete quests below to deal damage!</div>
-            `;
-        }
-
-        const questsList = container.createDiv({ cls: 'journey-list' });
-        const activeQuests = s.quests.filter(q => !q.completed);
-
-        if (activeQuests.length === 0) {
-            questsList.createDiv({ cls: 'journey-empty', text: 'No active quests. Create one to start fighting!' });
-        } else {
-            activeQuests.slice(0, 5).forEach((quest, idx) => {
-                const realIndex = s.quests.indexOf(quest);
-                const diff = DIFFICULTY[quest.difficulty || 'medium'];
-                const yourCost = diff?.bossDamage || 10;
-                const bossDamage = Math.round(yourCost * 1.5);
-
-                const row = questsList.createDiv({ cls: 'journey-list-item quest' });
-                const completeBtn = row.createEl("button", { cls: 'journey-fight-btn', text: hasBoss ? "⚔️" : "✓" });
-                completeBtn.title = hasBoss ? `You: -${yourCost} HP, Boss: -${bossDamage} HP` : 'Complete quest';
-                completeBtn.onclick = async () => {
-                    await this.plugin.completeQuest(realIndex);
-                    this.render();
-                };
-                row.createSpan({ cls: 'quest-name', text: quest.name });
-                if (hasBoss) {
-                    row.createSpan({ cls: 'journey-quest-damage', text: `→ ${bossDamage} dmg` });
+                if (habit.streak > 0) {
+                    habitCard.createSpan({ cls: 'journey-habit-streak', text: `🔥 ${habit.streak}` });
                 }
 
                 // Delete button
-                const deleteBtn = row.createEl('button', { cls: 'journey-delete-btn', text: '×' });
-                deleteBtn.title = 'Delete quest';
-                deleteBtn.onclick = async (e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete quest "${quest.name}"?`)) {
-                        s.quests.splice(realIndex, 1);
-                        await this.plugin.saveSettings();
-                        new Notice(`🗑️ Quest deleted`);
+                const deleteBtn = habitCard.createEl('button', { cls: 'journey-habit-delete', text: '×' });
+                deleteBtn.onclick = async () => {
+                    if (confirm(`Delete habit: ${habit.name}?`)) {
+                        await this.plugin.removeHabit(index);
                         this.render();
                     }
                 };
             });
         }
 
-        // Quest creation buttons
-        const questBtns = container.createDiv({ cls: 'journey-quest-btns' });
-
-        const addQuestBtn = questBtns.createEl('button', { cls: 'journey-quest-create-btn' });
-        addQuestBtn.innerHTML = `<span class="btn-icon">📝</span><span class="btn-text">Create Quest</span>`;
-        addQuestBtn.onclick = () => new NewQuestModal(this.app, this.plugin, () => this.render()).open();
-
-        if (s.ai?.openRouterApiKey) {
-            const aiBtn = questBtns.createEl('button', { cls: 'journey-quest-create-btn ai' });
-            aiBtn.innerHTML = `<span class="btn-icon">✨</span><span class="btn-text">AI Generate</span>`;
-            aiBtn.onclick = () => new AIQuestGeneratorModal(this.app, this.plugin, () => this.render()).open();
-        } else {
-            const setupAiBtn = questBtns.createEl('button', { cls: 'journey-quest-create-btn disabled' });
-            setupAiBtn.innerHTML = `<span class="btn-icon">✨</span><span class="btn-text">AI (Setup in Settings)</span>`;
-            setupAiBtn.onclick = () => new Notice('⚙️ Add OpenRouter API key in Settings → The Journey');
-        }
+        const addHabitBtn = container.createEl('button', {
+            text: '+ Add Good Habit',
+            cls: 'journey-full-width-btn primary'
+        });
+        addHabitBtn.onclick = () => new NewHabitModal(this.app, this.plugin, () => this.render()).open();
     }
 
-    renderArenaSection(container) {
+    // Bad Habits Section (Track and reduce - decreases HP/XP when done)
+    renderBadHabitsSection(container) {
         const s = this.plugin.settings;
+        s.badHabits = s.badHabits || [];
 
-        // Show active bosses
-        const activeBosses = (s.bossFights || []).filter(b => !b.defeated);
+        container.createEl('p', {
+            text: 'Track bad habits you want to reduce. Be honest - logging helps awareness.',
+            cls: 'journey-section-desc'
+        });
 
-        if (activeBosses.length > 0) {
-            container.createEl('h5', { text: '🐉 Active Bosses' });
-            activeBosses.forEach((boss, idx) => {
-                const realIndex = s.bossFights.indexOf(boss);
-                const hpPercent = Math.max(0, (boss.currentHp / boss.maxHp) * 100);
-                const bossCard = container.createDiv({ cls: 'journey-boss-card' });
-                bossCard.innerHTML = `
-                    <div class="boss-header">
-                        <span class="boss-icon">${boss.icon || '🐉'}</span>
-                        <span class="boss-name">${boss.name}</span>
-                        <button class="journey-delete-btn boss-delete" title="Delete boss">×</button>
+        if (s.badHabits.length === 0) {
+            container.createDiv({ cls: 'journey-empty', text: 'No bad habits tracked. Add ones you want to reduce!' });
+        } else {
+            const badHabitsList = container.createDiv({ cls: 'journey-bad-habits-list' });
+
+            s.badHabits.forEach((habit, index) => {
+                const habitCard = badHabitsList.createDiv({
+                    cls: `journey-bad-habit-card ${habit.doneToday ? 'done-today' : ''}`
+                });
+
+                // Top row: info and delete button
+                const topRow = habitCard.createDiv({ cls: 'journey-bad-habit-top-row' });
+
+                const habitInfo = topRow.createDiv({ cls: 'journey-bad-habit-info' });
+                habitInfo.innerHTML = `
+                    <span class="journey-bad-habit-icon">⚠️</span>
+                    <div class="journey-bad-habit-details">
+                        <span class="journey-bad-habit-name">${habit.name}</span>
+                        <span class="journey-bad-habit-penalty">-${habit.hpLoss || 10} HP, -${habit.xpLoss || 5} XP</span>
                     </div>
-                    <div class="boss-hp-bar">
-                        <div class="boss-hp-fill" style="width: ${hpPercent}%"></div>
-                    </div>
-                    <div class="boss-hp-text">❤️ ${boss.currentHp} / ${boss.maxHp} HP</div>
-                    <div class="boss-desc">${boss.description || 'Complete quests to deal damage!'}</div>
                 `;
-                // Add delete event listener
-                const deleteBtn = bossCard.querySelector('.boss-delete');
-                if (deleteBtn) {
-                    deleteBtn.onclick = async (e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete boss "${boss.name}"? This cannot be undone.`)) {
-                            s.bossFights.splice(realIndex, 1);
-                            await this.plugin.saveSettings();
-                            new Notice(`🗑️ Boss deleted`);
-                            this.render();
-                        }
+
+                // Stats and delete in top row
+                const topActions = topRow.createDiv({ cls: 'journey-bad-habit-top-actions' });
+                if (habit.count > 0) {
+                    topActions.createSpan({ cls: 'journey-bad-habit-count', text: `${habit.count}×` });
+                }
+
+                const deleteBtn = topActions.createEl('button', { cls: 'journey-habit-delete', text: '×' });
+                deleteBtn.onclick = async () => {
+                    if (confirm(`Delete bad habit: ${habit.name}?`)) {
+                        s.badHabits.splice(index, 1);
+                        await this.plugin.saveSettings();
+                        this.render();
+                    }
+                };
+
+                // Bottom row: Big "I did it" button or logged status
+                const bottomRow = habitCard.createDiv({ cls: 'journey-bad-habit-bottom-row' });
+
+                if (!habit.doneToday) {
+                    const didItBtn = bottomRow.createEl('button', {
+                        text: '😔 I did it today...',
+                        cls: 'journey-bad-habit-btn'
+                    });
+                    didItBtn.onclick = async () => {
+                        habit.doneToday = true;
+                        habit.count = (habit.count || 0) + 1;
+                        s.hp = Math.max(1, s.hp - (habit.hpLoss || 10));
+                        s.xp = Math.max(0, s.xp - (habit.xpLoss || 5));
+                        await this.plugin.saveSettings();
+                        this.plugin.logActivity('bad_habit', `Did bad habit: ${habit.name}`, {
+                            hpLost: habit.hpLoss || 10,
+                            xpLost: habit.xpLoss || 5
+                        });
+                        new Notice(`😔 ${habit.name} - Lost ${habit.hpLoss || 10} HP, ${habit.xpLoss || 5} XP`);
+                        this.render();
                     };
+                } else {
+                    bottomRow.createDiv({
+                        cls: 'journey-bad-habit-done',
+                        text: '✓ Logged today - Stay strong tomorrow!'
+                    });
                 }
             });
-        } else {
-            container.createDiv({ cls: 'journey-empty', text: 'No active boss. Create one to make your quests epic!' });
         }
 
-        // Create Boss button
-        const createBossBtn = container.createEl('button', { text: '🐉 Create New Boss', cls: 'journey-full-width-btn boss' });
-        createBossBtn.onclick = () => new NewBossFightModal(this.app, this.plugin, () => this.render()).open();
+        const addBadHabitBtn = container.createEl('button', {
+            text: '+ Add Bad Habit to Track',
+            cls: 'journey-full-width-btn warning'
+        });
+        addBadHabitBtn.onclick = () => {
+            this.showAddBadHabitModal();
+        };
+    }
 
-        // Defeated bosses count
-        const defeatedBosses = (s.bossFights || []).filter(b => b.defeated);
-        if (defeatedBosses.length > 0) {
-            container.createDiv({ cls: 'journey-defeated-count', text: `🏆 Bosses Defeated: ${defeatedBosses.length}` });
-        }
+    // Modal to add bad habit
+    showAddBadHabitModal() {
+        const modal = new Modal(this.app);
+        modal.titleEl.setText('⚠️ Add Bad Habit to Track');
+
+        const content = modal.contentEl;
+
+        const nameInput = content.createEl('input', {
+            type: 'text',
+            placeholder: 'Bad habit name (e.g., "Junk food", "Social media")',
+            cls: 'journey-modal-input'
+        });
+
+        const hpLabel = content.createEl('label', { text: 'HP Loss:' });
+        const hpInput = content.createEl('input', {
+            type: 'number',
+            value: '10',
+            cls: 'journey-modal-input-small'
+        });
+
+        const xpLabel = content.createEl('label', { text: 'XP Loss:' });
+        const xpInput = content.createEl('input', {
+            type: 'number',
+            value: '5',
+            cls: 'journey-modal-input-small'
+        });
+
+        const saveBtn = content.createEl('button', {
+            text: 'Add Bad Habit',
+            cls: 'journey-modal-btn primary'
+        });
+        saveBtn.onclick = async () => {
+            const name = nameInput.value.trim();
+            if (!name) {
+                new Notice('Please enter a habit name');
+                return;
+            }
+
+            const s = this.plugin.settings;
+            s.badHabits = s.badHabits || [];
+            s.badHabits.push({
+                id: `bad_${Date.now()}`,
+                name: name,
+                hpLoss: parseInt(hpInput.value) || 10,
+                xpLoss: parseInt(xpInput.value) || 5,
+                count: 0,
+                doneToday: false,
+                createdAt: new Date().toISOString()
+            });
+
+            await this.plugin.saveSettings();
+            modal.close();
+            this.render();
+            new Notice(`⚠️ Added bad habit: ${name}`);
+        };
+
+        modal.open();
     }
 
     renderRestSection(container) {
@@ -1451,158 +2722,81 @@ class JourneyView extends ItemView {
             <span>⚡ ${s.energy || 100}/${s.maxEnergy || 100}</span>
         `;
 
-        // Sleep Quality Logging (like original plugin)
-        container.createEl('h5', { text: '😴 Log Last Night\'s Sleep' });
-        const sleepGrid = container.createDiv({ cls: 'journey-sleep-grid' });
+        // Mood Check-in Question
+        container.createEl('h5', { text: '😊 How are you feeling right now?' });
+        const moodQuestion = container.createDiv({ cls: 'journey-mood-question' });
+        const moodOptions = [
+            { icon: '😊', label: 'Great', energy: 10, hp: 5 },
+            { icon: '🙂', label: 'Good', energy: 5, hp: 2 },
+            { icon: '😐', label: 'Okay', energy: 0, hp: 0 },
+            { icon: '😔', label: 'Low', energy: -5, hp: -2 },
+            { icon: '😫', label: 'Exhausted', energy: -10, hp: -5 }
+        ];
 
-        SLEEP_QUALITY.forEach(sleep => {
-            const sleepBtn = sleepGrid.createEl('button', { cls: 'journey-sleep-btn' });
-            const restore = sleep.hpRestore >= 0 ? `+${sleep.hpRestore}` : sleep.hpRestore;
-            sleepBtn.innerHTML = `
-                <span class="sleep-icon">${sleep.icon}</span>
-                <span class="sleep-label">${sleep.label}</span>
-                <span class="sleep-hp">${restore} HP</span>
-            `;
-            sleepBtn.onclick = async () => {
-                await this.logSleep(sleep);
+        const moodGrid = moodQuestion.createDiv({ cls: 'journey-mood-grid-expanded' });
+        moodOptions.forEach(mood => {
+            const moodBtn = moodGrid.createEl('button', { cls: 'journey-mood-btn-large' });
+            moodBtn.innerHTML = `<span class="mood-icon">${mood.icon}</span><span class="mood-label">${mood.label}</span>`;
+            moodBtn.onclick = async () => {
+                s.energy = Math.max(0, Math.min(s.maxEnergy || 100, (s.energy || 100) + mood.energy));
+                s.hp = Math.max(1, Math.min(s.maxHp, s.hp + mood.hp));
+                s.lastMoodCheck = new Date().toISOString();
+                s.moodLog = s.moodLog || [];
+                s.moodLog.push({ mood: mood.label, timestamp: new Date().toISOString() });
+                if (s.moodLog.length > 30) s.moodLog = s.moodLog.slice(-30);
+                await this.plugin.saveSettings();
+                new Notice(`${mood.icon} Feeling ${mood.label}! Energy ${mood.energy >= 0 ? '+' : ''}${mood.energy}`);
+                this.render();
             };
         });
 
-        // HP Warning
-        if (s.hp < s.maxHp * 0.3) {
-            const warningDiv = container.createDiv({ cls: 'journey-hp-warning' });
-            warningDiv.innerHTML = `⚠️ <strong>Low HP!</strong> Get better sleep to recover.`;
-        }
+        // Sleep Log
+        container.createEl('h5', { text: '😴 How did you sleep last night?' });
+        const sleepQuestion = container.createDiv({ cls: 'journey-sleep-question' });
+        const sleepOptions = [
+            { icon: '😴', label: '8+ hours', hours: 8, energy: 20, hp: 10 },
+            { icon: '🛏️', label: '6-7 hours', hours: 7, energy: 10, hp: 5 },
+            { icon: '😪', label: '4-5 hours', hours: 5, energy: -5, hp: 0 },
+            { icon: '🥱', label: 'Less than 4', hours: 3, energy: -15, hp: -5 }
+        ];
 
-        // Activity Calendar
-        this.renderActivityCalendar(container);
-    }
-
-    async logSleep(sleep) {
-        const s = this.plugin.settings;
-
-        // Apply HP restore/damage
-        if (sleep.hpRestore >= 0) {
-            s.hp = Math.min(s.maxHp, s.hp + sleep.hpRestore);
-        } else {
-            s.hp = Math.max(1, s.hp + sleep.hpRestore);
-        }
-
-        // Restore some energy with good sleep
-        if (sleep.hpRestore > 0) {
-            s.energy = Math.min(s.maxEnergy || 100, (s.energy || 50) + sleep.hpRestore);
-        }
-
-        // Log sleep
-        if (!s.sleepLog) s.sleepLog = [];
-        s.sleepLog.unshift({
-            quality: sleep.id,
-            timestamp: new Date().toISOString(),
-            hpRestore: sleep.hpRestore
-        });
-        s.sleepLog = s.sleepLog.slice(0, 30); // Keep 30 days
-
-        // Log activity
-        this.plugin.logActivity('sleep', `Logged sleep: ${sleep.label}`, { hpRecovered: sleep.hpRestore });
-
-        await this.plugin.saveSettings();
-
-        const hpText = sleep.hpRestore >= 0 ? `+${sleep.hpRestore}` : sleep.hpRestore;
-        new Notice(`${sleep.icon} Sleep logged: ${sleep.label} (${hpText} HP)`);
-        this.render();
-    }
-
-    renderActivityCalendar(container) {
-        const s = this.plugin.settings;
-
-        container.createEl('h5', { text: '📅 Activity Calendar (Last 14 Days)' });
-        const calendarSection = container.createDiv({ cls: 'journey-calendar-section' });
-
-        // Get last 14 days
-        const today = new Date();
-        const days = [];
-        for (let i = 13; i >= 0; i--) {
-            const date = new Date(today);
-            date.setDate(date.getDate() - i);
-            days.push(date);
-        }
-
-        // Calendar grid
-        const calendarGrid = calendarSection.createDiv({ cls: 'journey-calendar-grid' });
-
-        // Day labels
-        const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-        days.forEach(date => {
-            const dayLabel = calendarGrid.createDiv({ cls: 'journey-calendar-label' });
-            dayLabel.textContent = dayLabels[date.getDay()];
+        const sleepGrid = sleepQuestion.createDiv({ cls: 'journey-sleep-grid' });
+        sleepOptions.forEach(sleep => {
+            const sleepBtn = sleepGrid.createEl('button', { cls: 'journey-sleep-btn' });
+            sleepBtn.innerHTML = `<span class="sleep-icon">${sleep.icon}</span><span class="sleep-label">${sleep.label}</span>`;
+            sleepBtn.onclick = async () => {
+                s.energy = Math.max(0, Math.min(s.maxEnergy || 100, (s.energy || 100) + sleep.energy));
+                s.hp = Math.max(1, Math.min(s.maxHp, s.hp + sleep.hp));
+                s.sleepLog = s.sleepLog || [];
+                s.sleepLog.push({ hours: sleep.hours, label: sleep.label, timestamp: new Date().toISOString() });
+                if (s.sleepLog.length > 30) s.sleepLog = s.sleepLog.slice(-30);
+                await this.plugin.saveSettings();
+                new Notice(`${sleep.icon} Logged ${sleep.label} sleep! Energy ${sleep.energy >= 0 ? '+' : ''}${sleep.energy}`);
+                this.render();
+            };
         });
 
-        // Day cells with activity indicators
-        days.forEach(date => {
-            const dateStr = date.toISOString().split('T')[0];
-            const dayCell = calendarGrid.createDiv({ cls: 'journey-calendar-day' });
+        // Recovery Actions
+        container.createEl('h5', { text: '🧘 Recovery Actions' });
+        const recoveryGrid = container.createDiv({ cls: 'journey-recovery-grid' });
+        const recoveryOptions = [
+            { icon: '🧘', label: 'Meditation', energy: 15, desc: '10 min mindfulness' },
+            { icon: '🚶', label: 'Walk', energy: 10, desc: 'Short walk outside' },
+            { icon: '☕', label: 'Break', energy: 5, desc: 'Take a rest' },
+            { icon: '💧', label: 'Hydrate', energy: 3, desc: 'Drink water' }
+        ];
 
-            // Check for activities on this day
-            const moodEntry = (s.moodLog || []).find(m =>
-                m.timestamp && m.timestamp.startsWith(dateStr)
-            );
-            const sleepEntry = (s.sleepLog || []).find(sl =>
-                sl.timestamp && sl.timestamp.startsWith(dateStr)
-            );
-            const habitEntry = (s.habits || []).some(h =>
-                h.lastCompleted && h.lastCompleted.startsWith(dateStr)
-            );
-
-            // Build indicators
-            let indicators = [];
-            if (moodEntry) {
-                const mood = MOOD_OPTIONS.find(m => m.id === moodEntry.moodId);
-                indicators.push(mood?.icon || '😊');
-            }
-            if (sleepEntry) {
-                const sleep = SLEEP_QUALITY.find(sl => sl.id === sleepEntry.quality);
-                if (sleepEntry.hpRestore >= 20) indicators.push('💤');
-                else if (sleepEntry.hpRestore < 0) indicators.push('😵');
-            }
-            if (habitEntry) indicators.push('✓');
-
-            // Date number
-            const dateNum = dayCell.createDiv({ cls: 'calendar-date' });
-            dateNum.textContent = date.getDate();
-
-            // Activity indicators
-            if (indicators.length > 0) {
-                dayCell.classList.add('has-activity');
-                const indicatorDiv = dayCell.createDiv({ cls: 'calendar-indicators' });
-                indicatorDiv.textContent = indicators.slice(0, 2).join('');
-            }
-
-            // Highlight today
-            if (dateStr === today.toISOString().split('T')[0]) {
-                dayCell.classList.add('today');
-            }
-
-            // Tooltip
-            let tooltip = `${date.toLocaleDateString()}`;
-            if (moodEntry) {
-                const mood = MOOD_OPTIONS.find(m => m.id === moodEntry.moodId);
-                tooltip += `\nMood: ${mood?.label || 'Unknown'}`;
-            }
-            if (sleepEntry) {
-                const sleep = SLEEP_QUALITY.find(sl => sl.id === sleepEntry.quality);
-                tooltip += `\nSleep: ${sleep?.label || 'Unknown'}`;
-            }
-            if (habitEntry) tooltip += '\nHabits completed';
-            dayCell.title = tooltip;
+        recoveryOptions.forEach(action => {
+            const actionBtn = recoveryGrid.createEl('button', { cls: 'journey-recovery-btn' });
+            actionBtn.innerHTML = `<span class="recovery-icon">${action.icon}</span><span class="recovery-label">${action.label}</span><span class="recovery-desc">${action.desc}</span>`;
+            actionBtn.onclick = async () => {
+                s.energy = Math.max(0, Math.min(s.maxEnergy || 100, (s.energy || 100) + action.energy));
+                await this.plugin.saveSettings();
+                this.plugin.logActivity('recovery', `${action.label}`, { energy: action.energy });
+                new Notice(`${action.icon} ${action.label}! +${action.energy} Energy`);
+                this.render();
+            };
         });
-
-        // Legend
-        const legend = calendarSection.createDiv({ cls: 'journey-calendar-legend' });
-        legend.innerHTML = `
-            <span>😊 Mood</span>
-            <span>💤 Good Sleep</span>
-            <span>✓ Habits</span>
-        `;
     }
 
     async startDungeon(minutes, tier) {
@@ -1991,24 +3185,10 @@ class JourneyView extends ItemView {
                         .filter(([k, v]) => v !== undefined && v !== null)
                         .map(([k, v]) => {
                             if (k === 'xp') return `+${v} XP`;
-                            if (k === 'gold' && v >= 0) return `+${v}g`;
-                            if (k === 'gold' && v < 0) return `${v}g`;
-                            if (k === 'goldSpent') return `-${v}g`;
-                            if (k === 'hpRecovered' || k === 'hpGain') return `+${v} HP`;
-                            if (k === 'hpLost' || k === 'hpCost') return `-${v} HP`;
-                            if (k === 'energyGain') return `+${v} ⚡`;
-                            if (k === 'energyLost') return `-${v} ⚡`;
+                            if (k === 'gold') return `+${v}g`;
+                            if (k === 'hpRecovered') return `+${v} HP`;
+                            if (k === 'hpLost') return `-${v} HP`;
                             if (k === 'streak') return `🔥${v}`;
-                            if (k === 'skillName') return `🎯 ${v}`;
-                            if (k === 'skillLevel') return `Lv.${v}`;
-                            if (k === 'category') return v;
-                            if (k === 'newLevel') return `→ Lv.${v}`;
-                            if (k === 'tier' || k === 'devLevel') return `HUMAN ${v}`;
-                            if (k === 'bossDamage') return `Boss: -${v} HP`;
-                            if (k === 'bossName') return `🐉 ${v}`;
-                            if (k === 'domain') return `📊 ${v}`;
-                            if (k === 'mood') return v;
-                            if (k === 'sleepHours') return `${v}h sleep`;
                             return null;
                         })
                         .filter(Boolean)
@@ -2045,7 +3225,7 @@ class JourneyView extends ItemView {
 
 /* Main Core - Stable code (extracted modules removed) */
 
-/* The Journey Plugin v0.10 - Enhanced Edition */
+/* The Journey Plugin v0.5 - Beta Edition */
 
 
 // Simple markdown to HTML converter for AI messages
@@ -2642,41 +3822,74 @@ const ACTIVITY_CATEGORIES = [
     { id: 'habit_complete', icon: '✅', label: 'Habit Done', color: '#3498db' },
     { id: 'bad_habit', icon: '💀', label: 'Bad Habit', color: '#e74c3c' },
     { id: 'level_up', icon: '🎉', label: 'Level Up', color: '#f1c40f' },
-    { id: 'tier_up', icon: '🌟', label: 'Tier Up', color: '#9b59b6' },
     { id: 'achievement', icon: '🏆', label: 'Achievement', color: '#9b59b6' },
     { id: 'shop_purchase', icon: '🛍️', label: 'Purchase', color: '#e67e22' },
-    { id: 'sleep', icon: '😴', label: 'Sleep Logged', color: '#1abc9c' },
     { id: 'inn_rest', icon: '🏨', label: 'Rested at Inn', color: '#1abc9c' },
-    { id: 'mood', icon: '🎭', label: 'Mood Logged', color: '#3498db' },
     { id: 'damage', icon: '💔', label: 'Took Damage', color: '#c0392b' },
-    { id: 'hp_gain', icon: '❤️', label: 'HP Recovered', color: '#e74c3c' },
-    { id: 'energy_change', icon: '⚡', label: 'Energy Change', color: '#f39c12' },
-    { id: 'xp_gain', icon: '✨', label: 'XP Gained', color: '#55aaff' },
     { id: 'gold_earned', icon: '💰', label: 'Gold Earned', color: '#f39c12' },
-    { id: 'gold_spent', icon: '💸', label: 'Gold Spent', color: '#e67e22' },
     { id: 'boss_damage', icon: '🐉', label: 'Boss Damaged', color: '#e74c3c' },
     { id: 'boss_defeated', icon: '👑', label: 'Boss Defeated', color: '#f1c40f' },
-    { id: 'boss_created', icon: '🐲', label: 'Boss Created', color: '#9b59b6' },
     { id: 'dungeon_complete', icon: '🏰', label: 'Dungeon Cleared', color: '#9b59b6' },
     { id: 'focus_session', icon: '🎯', label: 'Focus Session', color: '#3498db' },
-    { id: 'journal_sync', icon: '📓', label: 'Journal Sync', color: '#9b59b6' },
-    { id: 'skill_discovered', icon: '🎯', label: 'Skill Discovered', color: '#aa55ff' },
-    { id: 'skill_evolved', icon: '⬆️', label: 'Skill Evolved', color: '#aa55ff' },
-    { id: 'skill_levelup', icon: '📈', label: 'Skill Level Up', color: '#aa55ff' },
-    { id: 'skill_added', icon: '➕', label: 'Skill Added', color: '#aa55ff' },
-    { id: 'domain_change', icon: '📊', label: 'Domain Changed', color: '#3498db' }
+    { id: 'journal_sync', icon: '📓', label: 'Journal Sync', color: '#9b59b6' }
 ];
 
 // ============================================================================
 // BOSS FIGHT SYSTEM - Long-term Goals as Bosses
 // ============================================================================
 const BOSS_TEMPLATES = [
-    { id: 'lazy_dragon', name: '🐉 The Lazy Dragon', desc: 'Defeat procrastination and build discipline', domain: 'timeUse', baseHp: 100 },
-    { id: 'fog_giant', name: '🌫️ The Fog Giant', desc: 'Clear mental fog and gain clarity', domain: 'psychologicalWellbeing', baseHp: 100 },
-    { id: 'sloth_beast', name: '🦥 The Sloth Beast', desc: 'Overcome sedentary lifestyle', domain: 'health', baseHp: 100 },
-    { id: 'debt_demon', name: '💸 The Debt Demon', desc: 'Conquer financial challenges', domain: 'livingStandards', baseHp: 150 },
-    { id: 'isolation_wraith', name: '👻 The Isolation Wraith', desc: 'Break free from social isolation', domain: 'communityVitality', baseHp: 80 },
-    { id: 'ignorance_golem', name: '🗿 The Ignorance Golem', desc: 'Defeat ignorance through learning', domain: 'education', baseHp: 120 }
+    // Productivity & Time
+    { id: 'lazy_dragon', name: '🐉 The Lazy Dragon', desc: 'Defeat procrastination', domain: 'timeUse', baseHp: 100, category: 'productivity' },
+    { id: 'distraction_hydra', name: '🐙 Distraction Hydra', desc: 'Stop endless scrolling', domain: 'timeUse', baseHp: 120, category: 'productivity' },
+    { id: 'perfectionism_titan', name: '⚡ Perfectionism Titan', desc: 'Ship work, not perfect', domain: 'timeUse', baseHp: 80, category: 'productivity' },
+
+    // Mental Health
+    { id: 'fog_giant', name: '🌫️ The Fog Giant', desc: 'Clear mental fog', domain: 'psychologicalWellbeing', baseHp: 100, category: 'mind' },
+    { id: 'anxiety_specter', name: '😰 Anxiety Specter', desc: 'Manage anxiety', domain: 'psychologicalWellbeing', baseHp: 120, category: 'mind' },
+    { id: 'imposter_shadow', name: '🎭 Imposter Shadow', desc: 'Overcome self-doubt', domain: 'psychologicalWellbeing', baseHp: 80, category: 'mind' },
+    { id: 'burnout_phoenix', name: '🔥 Burnout Phoenix', desc: 'Recover from exhaustion', domain: 'psychologicalWellbeing', baseHp: 150, category: 'mind' },
+
+    // Health & Body
+    { id: 'sloth_beast', name: '🦥 The Sloth Beast', desc: 'Get active lifestyle', domain: 'health', baseHp: 100, category: 'body' },
+    { id: 'sugar_serpent', name: '🍬 Sugar Serpent', desc: 'Break sugar addiction', domain: 'health', baseHp: 80, category: 'body' },
+    { id: 'insomnia_wraith', name: '🌙 Insomnia Wraith', desc: 'Fix sleep schedule', domain: 'health', baseHp: 100, category: 'body' },
+    { id: 'junk_golem', name: '🍔 Junk Food Golem', desc: 'Eat healthy', domain: 'health', baseHp: 120, category: 'body' },
+
+    // Career & Work
+    { id: 'career_chimera', name: '💼 Career Chimera', desc: 'New job or promotion', domain: 'livingStandards', baseHp: 150, category: 'career' },
+    { id: 'project_kraken', name: '🦑 Project Kraken', desc: 'Complete big project', domain: 'livingStandards', baseHp: 100, category: 'career' },
+    { id: 'skill_gap_void', name: '🕳️ Skill Gap Void', desc: 'Learn new skill', domain: 'education', baseHp: 120, category: 'career' },
+
+    // Finance
+    { id: 'debt_demon', name: '💸 Debt Demon', desc: 'Pay off debt', domain: 'livingStandards', baseHp: 150, category: 'finance' },
+    { id: 'spending_vampire', name: '🧛 Spending Vampire', desc: 'Stop impulse buying', domain: 'livingStandards', baseHp: 80, category: 'finance' },
+    { id: 'income_ceiling', name: '📊 Income Ceiling', desc: 'Increase income', domain: 'livingStandards', baseHp: 200, category: 'finance' },
+
+    // Relationships & Social
+    { id: 'isolation_wraith', name: '👻 Isolation Wraith', desc: 'Connect with people', domain: 'communityVitality', baseHp: 80, category: 'social' },
+    { id: 'conflict_cerberus', name: '🐕 Conflict Cerberus', desc: 'Resolve conflicts', domain: 'communityVitality', baseHp: 100, category: 'social' },
+    { id: 'networking_sphinx', name: '🦁 Networking Sphinx', desc: 'Build connections', domain: 'communityVitality', baseHp: 100, category: 'social' },
+
+    // Learning & Growth
+    { id: 'ignorance_golem', name: '🗿 Ignorance Golem', desc: 'Master new subject', domain: 'education', baseHp: 120, category: 'learning' },
+    { id: 'language_barrier', name: '🗣️ Language Barrier', desc: 'Learn a language', domain: 'education', baseHp: 200, category: 'learning' },
+    { id: 'creative_block', name: '🎨 Creative Block', desc: 'Unlock creativity', domain: 'culturalEngagement', baseHp: 80, category: 'learning' },
+
+    // Life Goals
+    { id: 'clutter_colossus', name: '📦 Clutter Colossus', desc: 'Declutter space', domain: 'environmentQuality', baseHp: 100, category: 'life' },
+    { id: 'habit_hydra', name: '🐲 Habit Hydra', desc: 'Build new habit', domain: 'timeUse', baseHp: 100, category: 'life' },
+    { id: 'fear_dragon', name: '😱 Fear Dragon', desc: 'Face and conquer fear', domain: 'psychologicalWellbeing', baseHp: 80, category: 'life' }
+];
+
+const BOSS_CATEGORIES = [
+    { id: 'productivity', name: '⏰ Productivity', color: '#3498db' },
+    { id: 'mind', name: '🧠 Mental Health', color: '#9b59b6' },
+    { id: 'body', name: '💪 Health & Body', color: '#27ae60' },
+    { id: 'career', name: '💼 Career', color: '#e67e22' },
+    { id: 'finance', name: '💰 Finance', color: '#f1c40f' },
+    { id: 'social', name: '👥 Social', color: '#e74c3c' },
+    { id: 'learning', name: '📚 Learning', color: '#1abc9c' },
+    { id: 'life', name: '🌟 Life Goals', color: '#95a5a6' }
 ];
 
 // ============================================================================
@@ -2932,10 +4145,10 @@ const DEFAULT_ACHIEVEMENTS = [
 
 // Difficulty multipliers
 const DIFFICULTY = {
-    easy: { label: 'Easy', multiplier: 0.5, color: 'green', bossDamage: 5, hpReward: 3 },
-    medium: { label: 'Medium', multiplier: 1, color: 'yellow', bossDamage: 10, hpReward: 5 },
-    hard: { label: 'Hard', multiplier: 2, color: 'orange', bossDamage: 20, hpReward: 10 },
-    epic: { label: 'Epic', multiplier: 3, color: 'red', bossDamage: 35, hpReward: 15 }
+    easy: { label: 'Easy', multiplier: 0.5, color: 'green' },
+    medium: { label: 'Medium', multiplier: 1, color: 'yellow' },
+    hard: { label: 'Hard', multiplier: 2, color: 'orange' },
+    epic: { label: 'Epic', multiplier: 3, color: 'red' }
 };
 
 // ============================================================================
@@ -3126,6 +4339,110 @@ function getContextualWisdom(settings) {
     if (phase === 'discovery') return getRandomWisdom('flow') || getRandomWisdom('challenge');
 
     return getRandomWisdom();
+}
+
+// HUMAN 3.0 Wisdom - Dynamic wisdom based on current state
+const HUMAN30_WISDOM = {
+    // By Development Tier
+    tier: {
+        '1.0': [
+            { text: "The first step to freedom is recognizing you've been running on autopilot.", category: "Awakening", source: "HUMAN 1.0" },
+            { text: "Question every 'should' and 'must' that wasn't chosen by you.", category: "Self-Awareness", source: "HUMAN 1.0" },
+            { text: "You are not your habits. You are the one who can change them.", category: "Identity", source: "HUMAN 1.0" },
+            { text: "The NPC follows the script. The player writes their own.", category: "Choice", source: "HUMAN 1.0" },
+            { text: "Awareness is the first superpower. Notice what you do without thinking.", category: "Mindfulness", source: "HUMAN 1.0" }
+        ],
+        '2.0': [
+            { text: "You've taken control of the game. Now master its mechanics.", category: "Mastery", source: "HUMAN 2.0" },
+            { text: "Every skill you build is a tool for creating your reality.", category: "Skills", source: "HUMAN 2.0" },
+            { text: "The player experiments, fails, learns, and levels up.", category: "Growth", source: "HUMAN 2.0" },
+            { text: "Your comfort zone is a beautiful place, but nothing grows there.", category: "Challenge", source: "HUMAN 2.0" },
+            { text: "Flow state is where hours feel like minutes and growth feels like play.", category: "Flow", source: "HUMAN 2.0" }
+        ],
+        '3.0': [
+            { text: "The creator doesn't just play the game—they design new ones.", category: "Creation", source: "HUMAN 3.0" },
+            { text: "Your mastery now serves something greater than yourself.", category: "Purpose", source: "HUMAN 3.0" },
+            { text: "Legacy is built by those who create paths for others to walk.", category: "Legacy", source: "HUMAN 3.0" },
+            { text: "At this level, your growth accelerates the growth of everyone around you.", category: "Impact", source: "HUMAN 3.0" },
+            { text: "The architect sees systems where others see chaos.", category: "Wisdom", source: "HUMAN 3.0" }
+        ]
+    },
+    // By Phase
+    phase: {
+        dissonance: [
+            { text: "Discomfort is data. It's telling you something needs to change.", category: "Dissonance Phase", source: "Phase Wisdom" },
+            { text: "The tension you feel is the gap between who you are and who you could be.", category: "Dissonance Phase", source: "Phase Wisdom" },
+            { text: "Chaos precedes transformation. Embrace the dissonance.", category: "Dissonance Phase", source: "Phase Wisdom" }
+        ],
+        uncertainty: [
+            { text: "In the fog of uncertainty, every step forward is an act of courage.", category: "Uncertainty Phase", source: "Phase Wisdom" },
+            { text: "Not knowing is not weakness—it's the beginning of discovery.", category: "Uncertainty Phase", source: "Phase Wisdom" },
+            { text: "The path reveals itself to those who start walking.", category: "Uncertainty Phase", source: "Phase Wisdom" }
+        ],
+        discovery: [
+            { text: "You're in the zone. Ride the wave and let momentum carry you.", category: "Discovery Phase", source: "Phase Wisdom" },
+            { text: "Flow state unlocked. Time bends when you're aligned with purpose.", category: "Discovery Phase", source: "Phase Wisdom" },
+            { text: "This is where magic happens. Stay present and keep creating.", category: "Discovery Phase", source: "Phase Wisdom" }
+        ]
+    },
+    // By Quadrant (weakest)
+    quadrant: {
+        mind: [
+            { text: "Your mind is a garden. What you plant determines what grows.", category: "Mind Quadrant", source: "Quadrant Focus" },
+            { text: "Thoughts become beliefs, beliefs become actions, actions become destiny.", category: "Mind Quadrant", source: "Quadrant Focus" },
+            { text: "Learning is not filling a bucket but lighting a fire.", category: "Mind Quadrant", source: "Quadrant Focus" }
+        ],
+        body: [
+            { text: "Your body is your vehicle through life. Maintain it well.", category: "Body Quadrant", source: "Quadrant Focus" },
+            { text: "Energy management is life management. Protect your vitality.", category: "Body Quadrant", source: "Quadrant Focus" },
+            { text: "Movement is medicine. The body was made to move.", category: "Body Quadrant", source: "Quadrant Focus" }
+        ],
+        spirit: [
+            { text: "Connection is not a luxury—it's a fundamental human need.", category: "Spirit Quadrant", source: "Quadrant Focus" },
+            { text: "Meaning emerges from contribution to something beyond yourself.", category: "Spirit Quadrant", source: "Quadrant Focus" },
+            { text: "We rise by lifting others. Community is strength.", category: "Spirit Quadrant", source: "Quadrant Focus" }
+        ],
+        vocation: [
+            { text: "Your work is your signature on the world. Make it count.", category: "Vocation Quadrant", source: "Quadrant Focus" },
+            { text: "Find the intersection of what you love, what you're good at, and what the world needs.", category: "Vocation Quadrant", source: "Quadrant Focus" },
+            { text: "Build systems that work while you sleep. Leverage is freedom.", category: "Vocation Quadrant", source: "Quadrant Focus" }
+        ]
+    }
+};
+
+// Get wisdom based on HUMAN 3.0 framework state
+function getHuman30Wisdom(settings) {
+    const devLevel = getDevelopmentLevel(settings.level || 1);
+    const currentPhase = determinePhase(settings);
+    const quadrantScores = calculateQuadrantScores(settings.domains || []);
+
+    // Find weakest quadrant
+    let weakestQuadrant = 'mind';
+    let lowestScore = 100;
+    for (const [qId, score] of Object.entries(quadrantScores)) {
+        if (score < lowestScore) {
+            lowestScore = score;
+            weakestQuadrant = qId;
+        }
+    }
+
+    // Randomly choose wisdom source with weighted priority
+    const rand = Math.random();
+    let wisdomPool;
+
+    if (rand < 0.4) {
+        // 40% - Based on current tier
+        wisdomPool = HUMAN30_WISDOM.tier[devLevel] || HUMAN30_WISDOM.tier['1.0'];
+    } else if (rand < 0.7) {
+        // 30% - Based on current phase
+        wisdomPool = HUMAN30_WISDOM.phase[currentPhase] || HUMAN30_WISDOM.phase.dissonance;
+    } else {
+        // 30% - Based on weakest quadrant
+        wisdomPool = HUMAN30_WISDOM.quadrant[weakestQuadrant] || HUMAN30_WISDOM.quadrant.mind;
+    }
+
+    // Return random wisdom from selected pool
+    return wisdomPool[Math.floor(Math.random() * wisdomPool.length)];
 }
 
 // Calculate psychic entropy (chaos accumulation)
@@ -4893,53 +6210,57 @@ class NewBossFightModal extends Modal {
                 dd.onChange(value => domain = value);
             });
 
-        // Boss templates - Easy click buttons
-        contentEl.createEl('h4', { text: '⚡ Quick Templates (Click to create instantly!)' });
-        const templateGrid = contentEl.createDiv({ cls: 'journey-boss-template-grid' });
+        // Boss templates - grouped by category
+        contentEl.createEl('h4', { text: '📋 Or choose a template:' });
+        contentEl.createEl('p', { text: 'Click any template to use it', cls: 'rpg-modal-hint' });
 
-        BOSS_TEMPLATES.forEach(template => {
-            const templateBtn = templateGrid.createEl('button', { cls: 'journey-boss-template-btn' });
-            templateBtn.innerHTML = `
-                <div class="template-name">${template.name}</div>
-                <div class="template-desc">${template.desc}</div>
-                <div class="template-stats">❤️ ${template.baseHp} HP</div>
-            `;
+        const templateContainer = contentEl.createDiv({ cls: 'rpg-boss-template-container' });
 
-            templateBtn.onclick = async () => {
-                // Create boss instantly from template
-                const boss = {
-                    id: Date.now().toString(),
-                    name: template.name,
-                    description: template.desc,
-                    icon: template.name.split(' ')[0], // Get emoji
-                    maxHp: template.baseHp,
-                    currentHp: template.baseHp,
-                    domain: template.domain,
-                    defeated: false,
-                    createdAt: new Date().toISOString()
+        BOSS_CATEGORIES.forEach(category => {
+            const categoryTemplates = BOSS_TEMPLATES.filter(t => t.category === category.id);
+            if (categoryTemplates.length === 0) return;
+
+            const categorySection = templateContainer.createDiv({ cls: 'rpg-boss-category' });
+            categorySection.createDiv({
+                cls: 'rpg-boss-category-header',
+                text: category.name,
+                attr: { style: `border-left: 4px solid ${category.color}` }
+            });
+
+            const templateGrid = categorySection.createDiv({ cls: 'rpg-boss-template-grid' });
+
+            categoryTemplates.forEach(template => {
+                const templateBtn = templateGrid.createDiv({ cls: 'rpg-boss-template' });
+                templateBtn.innerHTML = `
+                    <div class="rpg-boss-template-icon">${template.name.split(' ')[0]}</div>
+                    <div class="rpg-boss-template-content">
+                        <div class="rpg-boss-template-name">${template.name.split(' ').slice(1).join(' ')}</div>
+                        <div class="rpg-boss-template-desc">${template.desc}</div>
+                        <div class="rpg-boss-template-hp">${template.baseHp} HP</div>
+                    </div>
+                `;
+
+                templateBtn.onclick = () => {
+                    name = template.name;
+                    description = template.desc;
+                    icon = template.name.split(' ')[0];
+                    maxHp = template.baseHp;
+                    domain = template.domain;
+
+                    // Update fields visually
+                    const inputs = contentEl.querySelectorAll('input');
+                    if (inputs[0]) inputs[0].value = name;
+                    if (inputs[1]) inputs[1].value = description;
+                    if (inputs[2]) inputs[2].value = icon;
+
+                    // Highlight selected template
+                    templateContainer.querySelectorAll('.rpg-boss-template').forEach(t => t.classList.remove('selected'));
+                    templateBtn.classList.add('selected');
+
+                    new Notice(`Selected: ${template.name}`);
                 };
-
-                if (!this.plugin.settings.bossFights) {
-                    this.plugin.settings.bossFights = [];
-                }
-                this.plugin.settings.bossFights.push(boss);
-
-                // Log to Chronicle
-                this.plugin.logActivity('boss_created', `Created boss: ${template.name}`, {
-                    bossName: template.name,
-                    domain: template.domain
-                });
-
-                await this.plugin.saveSettings();
-
-                new Notice(`🐉 ${template.name} has appeared! Defeat it by completing quests!`);
-                this.onSubmit();
-                this.close();
-            };
+            });
         });
-
-        contentEl.createEl('hr');
-        contentEl.createEl('h4', { text: '✏️ Or create custom boss:' });
 
         new Setting(contentEl)
             .addButton(btn => btn
@@ -4967,13 +6288,6 @@ class NewBossFightModal extends Modal {
                         this.plugin.settings.bossFights = [];
                     }
                     this.plugin.settings.bossFights.push(boss);
-
-                    // Log to Chronicle
-                    this.plugin.logActivity('boss_created', `Created boss: ${name}`, {
-                        bossName: name,
-                        domain: domain
-                    });
-
                     await this.plugin.saveSettings();
 
                     new Notice(`🐉 Boss "${name}" has appeared! Defeat it by completing ${domain} tasks!`);
@@ -5550,44 +6864,6 @@ class TheJourneySettingTab extends PluginSettingTab {
                     }));
         }
 
-        // Update Plugin Section
-        containerEl.createEl('h3', { text: '🔄 Plugin Updates' });
-
-        new Setting(containerEl)
-            .setName('Check for Updates')
-            .setDesc('Check GitHub for the latest version of The Journey plugin')
-            .addButton(btn => btn
-                .setButtonText('🔄 Check Updates')
-                .onClick(async () => {
-                    btn.setButtonText('Checking...');
-                    btn.setDisabled(true);
-                    try {
-                        const response = await requestUrl({
-                            url: 'https://api.github.com/repos/huyhung/the-journey-obsidian/releases/latest',
-                            method: 'GET'
-                        });
-                        const latestVersion = response.json.tag_name?.replace('v', '') || 'unknown';
-                        const currentVersion = this.plugin.manifest.version;
-
-                        if (latestVersion !== 'unknown' && latestVersion !== currentVersion) {
-                            new Notice(`🎉 New version available: v${latestVersion} (current: v${currentVersion})\n\nDownload from GitHub to update!`, 8000);
-                        } else if (latestVersion === currentVersion) {
-                            new Notice(`✅ You're up to date! (v${currentVersion})`);
-                        } else {
-                            new Notice(`Current version: v${currentVersion}\nCheck GitHub for updates.`);
-                        }
-                    } catch (e) {
-                        new Notice(`ℹ️ Current version: v${this.plugin.manifest.version}\n\nVisit GitHub to check for updates.`);
-                    }
-                    btn.setButtonText('🔄 Check Updates');
-                    btn.setDisabled(false);
-                }))
-            .addButton(btn => btn
-                .setButtonText('📂 Open GitHub')
-                .onClick(() => {
-                    window.open('https://github.com/huyhung/the-journey-obsidian/releases', '_blank');
-                }));
-
         // Game Actions Section
         containerEl.createEl('h3', { text: '🎮 Game Actions' });
 
@@ -5649,15 +6925,15 @@ class TheJourneySettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Reset Character')
-            .setDesc('⚠️ Complete fresh start - deletes ALL data: character profile, habits, quests, bosses, skills, journal history. You can create a new character and sync journal from scratch.')
+            .setName('Reset All Data')
+            .setDesc('⚠️ This will delete ALL progress including character, habits, quests, and achievements!')
             .addButton(btn => btn
-                .setButtonText('🗑️ Delete & Start Fresh')
+                .setButtonText('Reset Everything')
                 .setWarning()
                 .onClick(async () => {
-                    if (confirm('⚠️ DELETE EVERYTHING?\n\nThis will permanently remove:\n• Character profile & assessment\n• All habits and quests\n• Boss fights & dungeons\n• Skills discovered\n• Mood & sleep logs\n• Journal analysis history\n\nYou will start completely fresh like a new player.\n\nThis cannot be undone!')) {
+                    if (confirm('⚠️ Are you SURE? This will reset ALL your progress and cannot be undone!')) {
                         await this.plugin.resetAllData();
-                        new Notice('🔄 Character deleted! Open The Journey to create a new hero.');
+                        new Notice('🔄 All data has been reset!');
                         this.display(); // Refresh settings view
                     }
                 }));
@@ -5670,7 +6946,7 @@ class TheJourneySettingTab extends PluginSettingTab {
 
 module.exports = class TheJourneyPlugin extends Plugin {
     async onload() {
-        console.log('Loading The Journey Plugin v0.10.8');
+        console.log('Loading The Journey Plugin v0.5 - Beta Edition');
         await this.loadSettings();
         this.checkDailyReset();
 
@@ -5812,11 +7088,57 @@ module.exports = class TheJourneyPlugin extends Plugin {
             dailyStats: saved.dailyStats || {},
             // Journal Intelligence
             journalSettings: saved.journalSettings || JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS)),
-            // Skills System (IMPORTANT: Must load from saved data!)
-            skillsSettings: saved.skillsSettings || JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS)),
-            // Last mood tracking
-            lastMood: saved.lastMood || null
+            // Skills System
+            skillsSettings: saved.skillsSettings || JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS))
         };
+
+        // Migrate existing users with completed assessment to new discovery system
+        this.migrateToDiscoverySystem();
+    }
+
+    // Migrate legacy assessment data to new gradual discovery system
+    migrateToDiscoverySystem() {
+        const s = this.settings;
+        if (!s.characterProfile) return;
+
+        // Initialize discovery if not exists
+        if (!s.characterProfile.discovery) {
+            s.characterProfile.discovery = {
+                currentQuestionIndex: 0,
+                questionResponses: {},
+                discoveredDomains: [],
+                domainDataPoints: {},
+                questionsToday: 0,
+                lastQuestionDate: null,
+                skippedQuestions: []
+            };
+        }
+
+        // If user completed old assessment, migrate to new system
+        if (s.characterProfile.assessmentComplete &&
+            s.characterProfile.assessmentResponses &&
+            s.characterProfile.assessmentResponses.length > 0 &&
+            s.characterProfile.discovery.discoveredDomains.length === 0) {
+
+            const discovery = s.characterProfile.discovery;
+
+            // Convert old responses array to new format and discover all domains
+            for (const response of s.characterProfile.assessmentResponses) {
+                discovery.questionResponses[response.questionId] = response.value;
+
+                // Find domain for this question
+                for (const [domainId, questions] of Object.entries(QUESTION_BANK)) {
+                    const q = questions.find(q => q.id === response.questionId);
+                    if (q) {
+                        discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+                        if (!discovery.discoveredDomains.includes(domainId)) {
+                            discovery.discoveredDomains.push(domainId);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     async saveSettings() {
@@ -5825,15 +7147,23 @@ module.exports = class TheJourneyPlugin extends Plugin {
     }
 
     async resetAllData() {
+        // Preserve AI settings (API keys, model, provider, etc.)
+        const preservedAiSettings = this.settings.ai ? { ...this.settings.ai } : { ...DEFAULT_AI_SETTINGS };
+        // Clear chat history but keep configuration
+        preservedAiSettings.chatHistory = [];
+
+        // Preserve journal folder settings
+        const preservedJournalFolder = this.settings.journalSettings?.journalFolder || DEFAULT_JOURNAL_SETTINGS.journalFolder;
+
         this.settings = {
             level: 1, xp: 0, hp: 100, maxHp: 100, gold: 0,
             totalGoldEarned: 0, totalHabitsCompleted: 0, totalQuestsCompleted: 0,
             lastPlayedDate: new Date().toDateString(),
             domains: JSON.parse(JSON.stringify(DEFAULT_DOMAINS)),
-            habits: [], badHabits: [], quests: [], rewards: [], skills: [],
+            habits: [], badHabits: [], quests: [], rewards: [],
             achievements: JSON.parse(JSON.stringify(DEFAULT_ACHIEVEMENTS)),
             characterProfile: null,
-            ai: { ...DEFAULT_AI_SETTINGS },
+            ai: preservedAiSettings, // Preserve AI settings
             aiQuestsGenerated: 0,
             // HUMAN 3.0 Framework
             currentPhase: 'dissonance',
@@ -5861,15 +7191,17 @@ module.exports = class TheJourneyPlugin extends Plugin {
             // Difficulty & Daily
             gameDifficulty: 'normal',
             dailyStats: {},
-            // Journal Intelligence
-            journalSettings: JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS)),
+            // Journal Intelligence - preserve folder setting
+            journalSettings: {
+                ...JSON.parse(JSON.stringify(DEFAULT_JOURNAL_SETTINGS)),
+                journalFolder: preservedJournalFolder
+            },
             // Skills System
-            skillsSettings: JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS)),
-            // Last mood
-            lastMood: null
+            skillsSettings: JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS))
         };
         await this.saveSettings();
-        new Notice("🔄 All data has been reset!");
+        this.refreshViews(); // Refresh the JourneyView
+        new Notice("🔄 All data has been reset! (Settings preserved)");
     }
 
     checkDailyReset() {
@@ -5954,6 +7286,9 @@ module.exports = class TheJourneyPlugin extends Plugin {
 
                 // Damage bosses linked to this domain
                 this.damageBossesForDomain(domainId, 10);
+
+                // Discover domain through activity (gradual discovery)
+                this.discoverDomainFromActivity(domainId, 'quest');
             }
         }
 
@@ -6028,7 +7363,6 @@ module.exports = class TheJourneyPlugin extends Plugin {
         const habit = s.habits[index];
         if (habit && !habit.completed) {
             habit.completed = true;
-            habit.lastCompleted = new Date().toISOString();
             habit.lastCompletedDate = new Date().toDateString();
             s.totalHabitsCompleted++;
 
@@ -6037,20 +7371,14 @@ module.exports = class TheJourneyPlugin extends Plugin {
             const finalXp = Math.round(habit.xp * diff.multiplier * (1 + streakBonus));
             const finalGold = Math.round(habit.gold * diff.multiplier * (1 + streakBonus));
 
-            // HP Reward for good habits
-            const hpReward = habit.hpReward || diff.hpReward || 5;
-            s.hp = Math.min(s.maxHp, s.hp + hpReward);
-
             // Log activity
             this.logActivity('habit_complete', habit.name, {
                 xp: finalXp,
                 gold: finalGold,
-                hpGain: hpReward,
                 streak: habit.streak || 0
             });
 
             this.gainXp(finalXp, finalGold, habit.domain);
-            new Notice(`✅ ${habit.name} +${finalXp} XP +${hpReward} HP`);
         }
     }
 
@@ -6071,38 +7399,10 @@ module.exports = class TheJourneyPlugin extends Plugin {
             let finalXp = Math.round(quest.xp * diff.multiplier);
             let finalGold = Math.round(quest.gold * diff.multiplier);
 
-            // Player takes damage (boss fight cost)
-            const playerDamage = diff.bossDamage || 10;
-            s.hp = Math.max(1, s.hp - playerDamage);
-
-            // Damage active bosses!
-            const bossDamageDealt = Math.round(playerDamage * 1.5);
-            let bossDefeated = null;
-            const activeBosses = (s.bossFights || []).filter(b => !b.defeated);
-
-            if (activeBosses.length > 0) {
-                // Damage all active bosses (or just the first one matching domain)
-                const targetBoss = activeBosses.find(b => b.domain === quest.domain) || activeBosses[0];
-                if (targetBoss) {
-                    targetBoss.currentHp = Math.max(0, targetBoss.currentHp - bossDamageDealt);
-
-                    if (targetBoss.currentHp <= 0) {
-                        targetBoss.defeated = true;
-                        targetBoss.defeatedAt = new Date().toISOString();
-                        bossDefeated = targetBoss;
-
-                        // Boss defeat rewards!
-                        const bossReward = Math.round(targetBoss.maxHp * 0.5);
-                        s.gold += bossReward;
-                        finalXp += targetBoss.maxHp;
-                    }
-                }
-            }
-
             // Check for Flow State bonus (HUMAN 3.0)
             const flowState = checkFlowState(quest.difficulty || 'medium', s.level);
             if (flowState.inFlow) {
-                finalXp = Math.round(finalXp * 1.25);
+                finalXp = Math.round(finalXp * 1.25); // 25% bonus for flow state
                 new Notice(`🌊 ${flowState.message}`);
             }
 
@@ -6110,22 +7410,12 @@ module.exports = class TheJourneyPlugin extends Plugin {
             this.logActivity('quest_complete', quest.name, {
                 xp: finalXp,
                 gold: finalGold,
-                playerDamage: playerDamage,
-                bossDamage: bossDamageDealt,
                 difficulty: quest.difficulty || 'medium',
                 inFlow: flowState.inFlow
             });
 
             this.gainXp(finalXp, finalGold, quest.domain);
-
-            // Notification
-            if (bossDefeated) {
-                new Notice(`🎉 BOSS DEFEATED! ${bossDefeated.name} is slain!\n+${targetBoss.maxHp} XP | +${Math.round(targetBoss.maxHp * 0.5)} Gold!`, 5000);
-            } else if (activeBosses.length > 0) {
-                new Notice(`⚔️ Quest Complete! You: -${playerDamage}❤️ | Boss: -${bossDamageDealt}❤️\n+${finalXp} XP`);
-            } else {
-                new Notice(`⚔️ Quest Complete: ${quest.name}\n+${finalXp} XP | -${playerDamage} HP`);
-            }
+            new Notice(`⚔️ Quest Complete: ${quest.name}!`);
         }
     }
 
@@ -6273,6 +7563,48 @@ module.exports = class TheJourneyPlugin extends Plugin {
             const bossIndex = s.bossFights.indexOf(boss);
             this.damageBoss(bossIndex, baseDamage);
         });
+
+        // Discover domain through boss fight activity (gradual discovery)
+        if (activeBosses.length > 0) {
+            this.discoverDomainFromActivity(domainId, 'boss');
+        }
+    }
+
+    // Helper to discover domain from various activities (quest, journal, boss)
+    discoverDomainFromActivity(domainId, source) {
+        const s = this.settings;
+        if (!s.characterProfile) return;
+
+        // Initialize discovery if not exists
+        if (!s.characterProfile.discovery) {
+            s.characterProfile.discovery = {
+                currentQuestionIndex: 0,
+                questionResponses: {},
+                discoveredDomains: [],
+                domainDataPoints: {},
+                questionsToday: 0,
+                lastQuestionDate: null,
+                skippedQuestions: []
+            };
+        }
+
+        const discovery = s.characterProfile.discovery;
+
+        // Add data point
+        discovery.domainDataPoints[domainId] = (discovery.domainDataPoints[domainId] || 0) + 1;
+
+        // Discover if not already discovered
+        if (!discovery.discoveredDomains.includes(domainId)) {
+            discovery.discoveredDomains.push(domainId);
+            const domain = DEFAULT_DOMAINS.find(d => d.id === domainId);
+            if (domain) {
+                new Notice(`🎉 New domain discovered: ${domain.icon} ${domain.name}!`);
+            }
+            this.logActivity('domain_discovered', `Discovered ${domainId} from ${source}`, {
+                domain: domainId,
+                source
+            });
+        }
     }
 
     // ============================================================================
@@ -6379,43 +7711,17 @@ module.exports = class TheJourneyPlugin extends Plugin {
             return;
         }
 
-        // Check if folder exists (for folder mode)
-        if (js.scanMode === 'folder') {
-            const folder = this.app.vault.getAbstractFileByPath(js.journalFolder);
-            if (!folder) {
-                new Notice(`📓 Journal folder "${js.journalFolder}" not found!\n\nCreate this folder or change it in Settings → The Journey → Journal Settings.`, 8000);
-                return;
-            }
-        }
-
-        // Check API key for AI features
-        const hasApiKey = !!this.settings.ai?.openRouterApiKey;
-        if (!hasApiKey) {
-            console.log('⚠️ No API key - using offline analysis only. Skill discovery disabled.');
-        }
-
         // Initialize aiService if API key exists
-        const aiService = hasApiKey ? new AIService(this) : null;
+        const aiService = this.settings.ai?.openRouterApiKey ? new AIService(this) : null;
 
         const analyzer = new JournalAnalyzer(this);
         // Set aiService on the plugin temporarily for the analyzer to use
         this.aiService = aiService;
 
-        // Get all journal notes first to check
-        const allJournals = await analyzer.getJournalNotes();
-        console.log(`📓 Found ${allJournals.length} total journal files in "${js.journalFolder}"`);
-
-        if (allJournals.length === 0) {
-            new Notice(`📓 No journal files found in "${js.journalFolder}" folder.\n\nAdd markdown files to this folder and try again.`, 6000);
-            return;
-        }
-
         const newNotes = await analyzer.getNewNotes();
-        console.log(`📓 ${newNotes.length} new/modified journals since last sync`);
 
         if (newNotes.length === 0) {
-            const lastSync = js.lastSyncDate ? new Date(js.lastSyncDate).toLocaleString() : 'Never';
-            new Notice(`📓 No new journal entries since last sync (${lastSync}).\n\nEdit a journal file or reset sync in settings.`, 5000);
+            new Notice('📓 No new journal entries to sync');
             return;
         }
 
@@ -6488,11 +7794,11 @@ module.exports = class TheJourneyPlugin extends Plugin {
                 // Gold from word count (journaling effort)
                 totalGold += Math.floor(analysis.wordCount / 100);
 
-                // Log to activity (individual journal)
-                const journalXP = analysis.ai?.suggestedXP || Math.max(0, (analysis.offline?.sentiment?.score || 0) * 5);
+                // Log to activity
                 this.logActivity('journal_sync', `Analyzed: ${analysis.fileName}`, {
-                    xp: journalXP,
-                    gold: Math.floor(analysis.wordCount / 100)
+                    wordCount: analysis.wordCount,
+                    sentiment: analysis.offline?.sentiment?.score || (analysis.ai?.sentiment || 0),
+                    hasAI: !!analysis.ai
                 });
 
                 // Create embedding for semantic search (if enabled and API key available)
@@ -6538,18 +7844,16 @@ module.exports = class TheJourneyPlugin extends Plugin {
             s.hp = Math.min(s.maxHp, s.hp + totalHPChange);
         }
 
-        // Apply Energy changes based on journaling effort
-        const energyGain = Math.min(30, newNotes.length * 5 + Math.floor(totalXP / 10));
-        if (energyGain > 0) {
-            s.energy = Math.min(s.maxEnergy || 100, (s.energy || 100) + energyGain);
-        }
-
         // Apply domain score changes (gradual, capped at ±5 per sync)
+        // Also discover domains through journal activity
         for (const [domainId, impact] of Object.entries(domainImpacts)) {
             const domain = s.domains.find(d => d.id === domainId);
             if (domain) {
                 const change = Math.min(5, Math.max(-5, impact / newNotes.length));
                 domain.score = Math.min(100, Math.max(0, domain.score + Math.round(change)));
+
+                // Discover domain through journal activity (gradual discovery)
+                this.discoverDomainFromActivity(domainId, 'journal');
             }
         }
 
@@ -6570,11 +7874,6 @@ module.exports = class TheJourneyPlugin extends Plugin {
             new Notice('🎯 Discovering skills from journals...');
             const skillService = new SkillService(this);
 
-            // Ensure analyzedJournals array exists
-            if (!this.settings.skillsSettings.analyzedJournals) {
-                this.settings.skillsSettings.analyzedJournals = [];
-            }
-
             for (const note of newNotes) {
                 try {
                     const content = await this.app.vault.read(note);
@@ -6592,37 +7891,15 @@ module.exports = class TheJourneyPlugin extends Plugin {
                                 this.logActivity('skill_discovered', `Discovered skill: ${result.skill.name}`, {
                                     category: result.skill.category
                                 });
-                                new Notice(`🎯 New skill discovered: ${result.skill.name} (+${result.xpAdded || 20} XP)`);
-                            } else if (result.action === 'evolved') {
-                                skillsLeveledUp += result.levelsGained || 0;
-                                this.logActivity('skill_evolved', `${result.oldName} evolved to ${result.skill.name}!`, {
+                                new Notice(`🎯 New skill discovered: ${result.skill.name}`);
+                            } else if (result.levelsGained > 0) {
+                                skillsLeveledUp += result.levelsGained;
+                                this.logActivity('skill_levelup', `${result.skill.name} leveled up!`, {
                                     newLevel: result.skill.level
                                 });
-                                new Notice(`✨ Skill evolved: ${result.skill.name} (Lv.${result.skill.level})`);
-                            } else if (result.action === 'xp_added') {
-                                if (result.levelsGained > 0) {
-                                    skillsLeveledUp += result.levelsGained;
-                                    this.logActivity('skill_levelup', `${result.skill.name} leveled up!`, {
-                                        newLevel: result.skill.level
-                                    });
-                                    new Notice(`⬆️ ${result.skill.name} leveled up to Lv.${result.skill.level}!`);
-                                } else {
-                                    // Show XP gain for existing skills
-                                    new Notice(`🎯 ${result.skill.name} +${result.xpAdded} XP (Lv.${result.skill.level})`);
-                                }
                             }
                         }
                     }
-
-                    // Mark journal as analyzed for skills
-                    const existingIdx = this.settings.skillsSettings.analyzedJournals.findIndex(j => j.path === note.path);
-                    const analyzeRecord = { path: note.path, mtime: note.stat.mtime, analyzedAt: Date.now() };
-                    if (existingIdx >= 0) {
-                        this.settings.skillsSettings.analyzedJournals[existingIdx] = analyzeRecord;
-                    } else {
-                        this.settings.skillsSettings.analyzedJournals.push(analyzeRecord);
-                    }
-
                 } catch (skillErr) {
                     console.error(`Skill discovery error for ${note.basename}:`, skillErr);
                 }
@@ -6640,111 +7917,11 @@ module.exports = class TheJourneyPlugin extends Plugin {
 
         // Show summary with skills info
         const hpText = totalHPChange >= 0 ? `+${totalHPChange}` : totalHPChange;
-        let summary = `📓 Journal Sync Complete!\n+${totalXP} XP, +${totalGold} Gold\n❤️ HP: ${hpText}, ⚡ Energy: +${energyGain}`;
+        let summary = `📓 Journal Sync Complete!\n+${totalXP} XP, +${totalGold} Gold\nHP: ${hpText}`;
         if (skillsDiscovered > 0 || skillsLeveledUp > 0) {
             summary += `\n🎯 Skills: ${skillsDiscovered > 0 ? `+${skillsDiscovered} new` : ''}${skillsDiscovered > 0 && skillsLeveledUp > 0 ? ', ' : ''}${skillsLeveledUp > 0 ? `${skillsLeveledUp} level ups` : ''}`;
         }
-        if (!hasApiKey) {
-            summary += '\n\n💡 Add API key for AI analysis & skill discovery';
-        }
-        new Notice(summary, 6000);
-    }
-
-    // Manual skill discovery from journals (button in Hero tab)
-    async manualDiscoverSkills() {
-        const apiKey = getActiveApiKey(this.settings);
-        if (!apiKey) {
-            new Notice('❌ API key required for skill discovery.\n\nAdd OpenRouter API key in Settings → The Journey.', 5000);
-            return;
-        }
-
-        const js = this.settings.journalSettings;
-        const analyzer = new JournalAnalyzer(this);
-
-        // Ensure skillsSettings exists
-        if (!this.settings.skillsSettings) {
-            this.settings.skillsSettings = JSON.parse(JSON.stringify(DEFAULT_SKILLS_SETTINGS));
-        }
-        if (!this.settings.skillsSettings.analyzedJournals) {
-            this.settings.skillsSettings.analyzedJournals = [];
-        }
-
-        // Get all journal notes
-        const allJournals = await analyzer.getJournalNotes();
-        if (allJournals.length === 0) {
-            new Notice(`📓 No journal files found in "${js.journalFolder}" folder.`, 4000);
-            return;
-        }
-
-        // Filter out already-analyzed journals (by path and mtime)
-        const analyzedMap = new Map(
-            this.settings.skillsSettings.analyzedJournals.map(j => [j.path, j.mtime])
-        );
-
-        const newJournals = allJournals.filter(note => {
-            const lastAnalyzed = analyzedMap.get(note.path);
-            // Include if never analyzed OR if modified since last analysis
-            return !lastAnalyzed || note.stat.mtime > lastAnalyzed;
-        });
-
-        if (newJournals.length === 0) {
-            new Notice(`🎯 All ${allJournals.length} journals already analyzed.\n\nEdit a journal or click "Reset & Resync All" to re-analyze.`, 4000);
-            return;
-        }
-
-        new Notice(`🎯 Discovering skills from ${newJournals.length} new journals...\n(${allJournals.length - newJournals.length} already analyzed)`);
-
-        const skillService = new SkillService(this);
-        let skillsDiscovered = 0;
-        let skillsLeveledUp = 0;
-
-        // Process each NEW journal
-        for (const note of newJournals) {
-            try {
-                const content = await this.app.vault.read(note);
-                console.log(`🎯 Discovering skills in: ${note.basename}`);
-
-                const discovered = await skillService.discoverSkillsFromJournal(content, note.basename);
-
-                if (discovered.length > 0) {
-                    console.log(`Found ${discovered.length} skills:`, discovered);
-                    const results = await skillService.processDiscoveredSkills(discovered);
-
-                    for (const result of results) {
-                        if (result.action === 'discovered') {
-                            skillsDiscovered++;
-                            new Notice(`🎯 New skill: ${result.skill.name}`, 2000);
-                        } else if (result.action === 'evolved') {
-                            skillsLeveledUp++;
-                            new Notice(`✨ ${result.skill.name} evolved!`, 2000);
-                        } else if (result.action === 'xp_added' && result.levelsGained > 0) {
-                            skillsLeveledUp += result.levelsGained;
-                        }
-                    }
-                }
-
-                // Mark journal as analyzed (even if no skills found)
-                const existingIdx = this.settings.skillsSettings.analyzedJournals.findIndex(j => j.path === note.path);
-                const analyzeRecord = { path: note.path, mtime: note.stat.mtime, analyzedAt: Date.now() };
-                if (existingIdx >= 0) {
-                    this.settings.skillsSettings.analyzedJournals[existingIdx] = analyzeRecord;
-                } else {
-                    this.settings.skillsSettings.analyzedJournals.push(analyzeRecord);
-                }
-
-            } catch (err) {
-                console.error(`Error discovering skills in ${note.basename}:`, err);
-            }
-        }
-
-        await this.saveSettings();
-        this.refreshViews();
-
-        if (skillsDiscovered > 0 || skillsLeveledUp > 0) {
-            new Notice(`🎯 Skill Discovery Complete!\n+${skillsDiscovered} new skills\n${skillsLeveledUp} level ups`, 5000);
-        } else {
-            new Notice(`🎯 No new skills discovered from ${newJournals.length} journals.\n\nWrite more about your activities!`, 4000);
-        }
+        new Notice(summary);
     }
 
     checkAchievements() {
@@ -6820,7 +7997,7 @@ module.exports = class TheJourneyPlugin extends Plugin {
 
     refreshViews() {
         this.app.workspace.getLeavesOfType(VIEW_TYPE_HERO).forEach((leaf) => {
-            if (leaf.view instanceof HeroView) leaf.view.render();
+            if (leaf.view instanceof JourneyView) leaf.view.render();
         });
     }
 
