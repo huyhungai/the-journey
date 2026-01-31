@@ -8,6 +8,15 @@
 
 The Journey is an Obsidian plugin that gamifies your personal development using RPG mechanics. Create your hero, track habits, complete quests, fight life bosses, and watch yourself grow through the 9 domains of Gross National Happiness.
 
+## What's New in v0.10.9
+
+- **Rest & Recovery** - Daily mood and sleep tracking with energy bonuses
+- **27 Boss Templates** - Pre-made bosses across 8 life categories
+- **Quest Rewards** - Earn XP, Gold, and deal boss damage
+- **AI Quest Generation** - Get personalized quest suggestions
+- **Run Away Button** - Strategic retreat (but boss recovers HP!)
+- **Improved Bad Habits UI** - Bigger, clearer tracking buttons
+
 ## Features
 
 ### Character Creation & Assessment
@@ -41,22 +50,42 @@ Track balance across:
 - **Vocation** - Career, skills, life's work
 
 ### Habit Tracking
-- Create good habits with XP/Gold rewards
-- Track bad habits with HP penalties
+- **Good habits** with XP/Gold/HP rewards
+- **Bad habits** with HP/XP penalties (improved UI with big "I did it" button)
 - Streak tracking and rewards
 - Daily habit dashboard
+- Encouragement messages for staying on track
 
 ### Quest System
 - Create quests linked to your life goals
-- AI-enhanced quest creation (optional)
-- Link quests to boss fights
-- Difficulty levels with scaled rewards
+- **AI-enhanced quest generation** with personalized suggestions
+- Link quests to boss fights for bonus damage
+- **Difficulty levels** with scaled rewards:
+  - Easy: +10 XP, +5 Gold, 10 boss damage
+  - Medium: +20 XP, +10 Gold, 20 boss damage
+  - Hard: +30 XP, +15 Gold, 30 boss damage
+- "Add All" button to quickly add multiple quests
 
 ### Boss Fights
 - Transform life challenges into epic boss battles
-- Boss HP based on challenge difficulty
-- Deal damage by completing quests
-- Earn massive rewards on victory
+- **27 pre-made boss templates** across 8 categories:
+  - ⏰ Productivity (Lazy Dragon, Distraction Hydra, Perfectionism Titan)
+  - 🧠 Mental Health (Fog Giant, Anxiety Specter, Imposter Shadow, Burnout Phoenix)
+  - 💪 Health & Body (Sloth Beast, Sugar Serpent, Insomnia Wraith, Junk Food Golem)
+  - 💼 Career (Career Chimera, Project Kraken, Skill Gap Void)
+  - 💰 Finance (Debt Demon, Spending Vampire, Income Ceiling)
+  - 👥 Social (Isolation Wraith, Conflict Cerberus, Networking Sphinx)
+  - 📚 Learning (Ignorance Golem, Language Barrier, Creative Block)
+  - 🌟 Life Goals (Clutter Colossus, Habit Hydra, Fear Dragon)
+- **Fight button** - Deal direct damage to bosses
+- **Run Away button** - Strategic retreat (boss recovers 5-15 HP)
+- Earn massive rewards (+50 XP, +25 Gold) on victory
+
+### Rest & Recovery
+- **Mood check-in** - Track how you're feeling (Great to Exhausted)
+- **Sleep logging** - Log sleep quality for HP/Energy bonuses
+- **Recovery actions** - Meditation, walks, breaks, hydration
+- Daily energy management system
 
 ### Skill Discovery
 - **Manual skill creation** - Add skills you're developing
