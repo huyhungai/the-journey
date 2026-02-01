@@ -3391,22 +3391,7 @@
     font-style: italic;
 }
 
-.journey-elder-settings-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: transparent;
-    border: none;
-    font-size: 1.2em;
-    cursor: pointer;
-    opacity: 0.6;
-    transition: opacity 0.2s;
-    padding: 5px;
-}
-
-.journey-elder-settings-btn:hover {
-    opacity: 1;
-}
+/* Old settings button styles removed - see new styles below */
 
 /* Elder Status Badge */
 .journey-elder-status {
@@ -3929,16 +3914,6 @@
 @media (max-width: 500px) {
     .journey-elder-wisdom-grid {
         grid-template-columns: repeat(2, 1fr);
-    }
-
-    .journey-elder-header {
-        flex-direction: column;
-        text-align: center;
-    }
-
-    .journey-elder-settings-btn {
-        position: static;
-        margin-top: 10px;
     }
 }
 
