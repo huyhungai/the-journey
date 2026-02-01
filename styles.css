@@ -4489,12 +4489,13 @@
 .journey-elder-header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .journey-elder-status-dot {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
 }
@@ -4511,20 +4512,21 @@
 /* Elder Mode Toggle - Compact with text */
 .journey-elder-mode-toggle {
     display: flex;
-    gap: 3px;
-    padding: 3px;
+    gap: 2px;
+    padding: 2px;
     background: var(--background-primary-alt);
-    border-radius: 15px;
+    border-radius: 12px;
+    flex-shrink: 0;
 }
 
 .journey-mode-btn {
-    padding: 5px 10px;
-    border-radius: 12px;
+    padding: 6px 10px;
+    border-radius: 10px;
     border: none;
     background: transparent;
     cursor: pointer;
     transition: all 0.2s;
-    font-size: 0.8em;
+    font-size: 0.75em;
     white-space: nowrap;
 }
 
@@ -4537,17 +4539,26 @@
     color: var(--text-on-accent);
 }
 
+/* Settings button - visible and touch-friendly */
 .journey-elder-settings-btn {
-    padding: 6px;
-    background: transparent;
-    border: none;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: var(--background-primary-alt);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
     cursor: pointer;
-    opacity: 0.5;
-    font-size: 1em;
+    opacity: 0.8;
+    font-size: 1.1em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .journey-elder-settings-btn:hover {
     opacity: 1;
+    background: var(--background-modifier-hover);
 }
 
 /* Elder Quick Actions - 1x4 Horizontal Row */
@@ -8270,49 +8281,97 @@
 
 /* Compact header row on mobile */
 .is-mobile .journey-elder-header-row {
-    padding: 6px 10px;
+    padding: 8px 10px;
     margin-bottom: 8px;
+    gap: 8px;
 }
 
 .is-phone .journey-elder-header-row {
+    padding: 6px 8px;
     gap: 6px;
 }
 
+/* Hide elder name on phone to save space */
 .is-phone .journey-elder-name-mini {
-    max-width: 80px;
-    font-size: 0.85em;
+    display: none;
 }
 
-/* Mode toggle on phone - keep text */
+.is-phone .journey-elder-avatar-mini {
+    font-size: 1.5em;
+}
+
+/* Mode toggle on phone - keep text readable */
+.is-mobile .journey-mode-btn {
+    padding: 8px 12px;
+    font-size: 0.8em;
+}
+
 .is-phone .journey-mode-btn {
-    padding: 4px 8px;
+    padding: 6px 10px;
     font-size: 0.75em;
+}
+
+/* Settings button - larger on mobile for touch */
+.is-mobile .journey-elder-settings-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2em;
+}
+
+.is-phone .journey-elder-settings-btn {
+    width: 38px;
+    height: 38px;
 }
 
 /* Quick actions 1x4 grid on mobile */
 .is-mobile .journey-elder-quick-actions {
     grid-template-columns: repeat(4, 1fr);
-    gap: 5px;
-    padding: 4px 0 6px;
-    margin-bottom: 4px;
+    gap: 6px;
+    padding: 4px 0 8px;
+    margin-bottom: 6px;
+}
+
+.is-mobile .journey-elder-quick-btn {
+    padding: 10px 4px;
+    min-height: 50px;
 }
 
 .is-phone .journey-elder-quick-btn {
-    padding: 6px 3px;
-    gap: 2px;
+    padding: 8px 4px;
+    min-height: 44px;
+}
+
+.is-mobile .journey-elder-quick-btn .icon {
+    font-size: 1.2em;
 }
 
 .is-phone .journey-elder-quick-btn .icon {
-    font-size: 1em;
+    font-size: 1.1em;
 }
 
-.is-phone .journey-elder-quick-btn .label {
+.is-mobile .journey-elder-quick-btn .label {
     font-size: 0.7em;
 }
 
+.is-phone .journey-elder-quick-btn .label {
+    font-size: 0.65em;
+}
+
 /* Compact greeting on mobile */
+.is-mobile .journey-elder-greeting.compact {
+    margin-bottom: 6px;
+}
+
 .is-mobile .journey-elder-greeting.compact .journey-elder-speech-bubble {
+    padding: 8px 12px;
+}
+
+.is-phone .journey-elder-greeting.compact .journey-elder-speech-bubble {
     padding: 6px 10px;
+}
+
+.is-mobile .journey-elder-greeting.compact .journey-elder-speech-bubble p {
+    font-size: 0.8em;
 }
 
 .is-phone .journey-elder-greeting.compact .journey-elder-speech-bubble p {
