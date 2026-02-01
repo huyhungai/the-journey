@@ -8,8 +8,15 @@
 
 The Journey is an Obsidian plugin that gamifies your personal development using RPG mechanics. Create your hero, track habits, complete quests, fight life bosses, and watch yourself grow through the 9 domains of Gross National Happiness.
 
-## What's New in v0.10.9
+## What's New in v0.10.10
 
+- **Mobile Optimized UI** - Touch-friendly buttons (44px+ targets), responsive layouts, iOS safe areas
+- **Elder Tab Redesign** - Compact header, 1x4 quick actions, chat-focused layout for mobile
+- **Better Mobile Navigation** - Horizontal scrolling tabs, larger touch targets
+- **Mobile Font Scaling** - Prevents iOS zoom on input focus
+- **Touch Feedback** - Visual feedback on tap for buttons and list items
+
+### Previous (v0.10.9)
 - **Rest & Recovery** - Daily mood and sleep tracking with energy bonuses
 - **27 Boss Templates** - Pre-made bosses across 8 life categories
 - **Quest Rewards** - Earn XP, Gold, and deal boss damage

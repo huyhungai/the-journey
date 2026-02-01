@@ -1,6 +1,6 @@
 {
   "name": "the-journey",
-  "version": "0.10.8",
+  "version": "0.10.10",
   "description": "Your personal hero's journey - gamify life with RPG mechanics in Obsidian",
   "main": "main.js",
   "scripts": {

@@ -1,4 +1,4 @@
-/* The Journey Plugin v0.10.4 - Enhanced Edition Styles */
+/* The Journey Plugin v0.10.10 - Mobile Optimized Edition Styles */
 :root {
     --journey-hp-color: #ff5555;
     --journey-xp-color: #55aaff;
@@ -3702,9 +3702,91 @@
     color: var(--text-muted);
 }
 
+/* Elder Response Modal (for quick actions) */
+.journey-elder-modal-content {
+    padding: 10px 0;
+}
+
+.journey-elder-modal-content .journey-elder-response {
+    background: var(--background-secondary);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.6;
+}
+
+.journey-elder-modal-content .journey-elder-response p {
+    margin-bottom: 10px;
+}
+
+.journey-elder-modal-content .journey-elder-response p:last-child {
+    margin-bottom: 0;
+}
+
 /* Elder Settings Modal */
+.rpg-elder-settings-modal {
+    max-width: 700px;
+}
+
+.rpg-elder-settings-modal .rpg-modal-subtitle {
+    color: var(--text-muted);
+    margin-bottom: 15px;
+}
+
+/* Elder Settings Tabs */
+.rpg-elder-tabs {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    padding-bottom: 0;
+}
+
+.rpg-elder-tab {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s ease;
+}
+
+.rpg-elder-tab:hover {
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.rpg-elder-tab.active {
+    color: var(--interactive-accent);
+    border-bottom-color: var(--interactive-accent);
+    font-weight: 500;
+}
+
+.rpg-elder-tab-content {
+    max-height: 500px;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.rpg-elder-tab-content h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.rpg-elder-tab-content h4 {
+    margin-top: 15px;
+    margin-bottom: 8px;
+    font-size: 1em;
+}
+
+/* Legacy class support */
 .journey-elder-settings-modal {
-    max-width: 600px;
+    max-width: 700px;
 }
 
 .journey-elder-settings-modal .journey-modal-subtitle {
@@ -4372,25 +4454,78 @@
     border-top: 1px solid var(--background-modifier-border);
 }
 
-/* Elder Mode Toggle */
+/* Elder Header Row - Compact Layout */
+.journey-elder-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+.journey-elder-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.journey-elder-avatar-mini {
+    font-size: 1.3em;
+    flex-shrink: 0;
+}
+
+.journey-elder-name-mini {
+    font-weight: 600;
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.journey-elder-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.journey-elder-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.journey-elder-status-dot.connected {
+    background: #2ecc71;
+    box-shadow: 0 0 6px rgba(46, 204, 113, 0.5);
+}
+
+.journey-elder-status-dot.offline {
+    background: var(--text-muted);
+}
+
+/* Elder Mode Toggle - Compact with text */
 .journey-elder-mode-toggle {
     display: flex;
-    gap: 5px;
-    padding: 5px;
-    background: var(--background-secondary);
-    border-radius: 20px;
-    margin-bottom: 15px;
-    width: fit-content;
+    gap: 3px;
+    padding: 3px;
+    background: var(--background-primary-alt);
+    border-radius: 15px;
 }
 
 .journey-mode-btn {
-    padding: 8px 16px;
-    border-radius: 15px;
+    padding: 5px 10px;
+    border-radius: 12px;
     border: none;
     background: transparent;
     cursor: pointer;
     transition: all 0.2s;
-    font-size: 0.9em;
+    font-size: 0.8em;
+    white-space: nowrap;
 }
 
 .journey-mode-btn:hover {
@@ -4402,57 +4537,58 @@
     color: var(--text-on-accent);
 }
 
-/* Elder Header */
-.journey-elder-header {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    padding: 15px;
-    background: var(--background-secondary);
-    border-radius: 10px;
-    margin-bottom: 15px;
-}
-
-.journey-elder-avatar {
-    font-size: 2.5em;
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--background-primary-alt);
-    border-radius: 50%;
-    border: 2px solid var(--interactive-accent);
-}
-
-.journey-elder-info {
-    flex: 1;
-}
-
-.journey-elder-name {
-    margin: 0;
-    font-size: 1.2em;
-}
-
-.journey-elder-title {
-    color: var(--text-muted);
-    font-size: 0.9em;
-}
-
 .journey-elder-settings-btn {
-    padding: 8px;
+    padding: 6px;
     background: transparent;
     border: none;
     cursor: pointer;
     opacity: 0.5;
-    font-size: 1.2em;
+    font-size: 1em;
 }
 
 .journey-elder-settings-btn:hover {
     opacity: 1;
 }
 
-/* Elder Status Badge */
+/* Elder Quick Actions - 1x4 Horizontal Row */
+.journey-elder-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 4px 0 8px;
+    margin-bottom: 6px;
+}
+
+.journey-elder-quick-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 4px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--background-modifier-border);
+    text-align: center;
+}
+
+.journey-elder-quick-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
+.journey-elder-quick-btn .icon {
+    font-size: 1.1em;
+}
+
+.journey-elder-quick-btn .label {
+    font-size: 0.75em;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+/* Elder Status Badge - Legacy support */
 .journey-elder-status {
     display: flex;
     align-items: center;
@@ -4473,15 +4609,28 @@
     color: var(--text-muted);
 }
 
-/* Elder Greeting */
+/* Elder Greeting - Compact version */
 .journey-elder-greeting {
-    margin-bottom: 20px;
+    margin-bottom: 10px;
+}
+
+.journey-elder-greeting.compact {
+    margin-bottom: 8px;
+}
+
+.journey-elder-greeting.compact .journey-elder-speech-bubble {
+    padding: 8px 12px;
+}
+
+.journey-elder-greeting.compact .journey-elder-speech-bubble p {
+    font-size: 0.8em;
+    line-height: 1.4;
 }
 
 .journey-elder-speech-bubble {
     background: var(--background-secondary);
-    padding: 15px 20px;
-    border-radius: 15px;
+    padding: 12px 15px;
+    border-radius: 12px;
     border-left: 3px solid var(--interactive-accent);
     position: relative;
 }
@@ -4489,32 +4638,33 @@
 .journey-elder-speech-bubble p {
     margin: 0;
     font-style: italic;
-    line-height: 1.6;
+    line-height: 1.5;
+    font-size: 0.9em;
 }
 
 .journey-elder-speech-bubble.offline {
     border-left-color: var(--text-muted);
 }
 
-/* Elder Wisdom Section */
+/* Elder Wisdom Section - Legacy support */
 .journey-elder-wisdom-section {
-    margin-bottom: 20px;
+    margin-bottom: 15px;
 }
 
 .journey-elder-wisdom-section h4 {
-    margin: 0 0 12px 0;
-    font-size: 1em;
+    margin: 0 0 10px 0;
+    font-size: 0.95em;
 }
 
 .journey-elder-wisdom-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    gap: 8px;
 }
 
 .journey-elder-wisdom-btn {
     background: var(--background-secondary);
-    padding: 12px;
+    padding: 10px;
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s;
@@ -4524,31 +4674,38 @@
 .journey-elder-wisdom-btn:hover {
     background: var(--background-modifier-hover);
     border-color: var(--interactive-accent);
-    transform: translateY(-1px);
 }
 
 .journey-elder-wisdom-btn .icon {
-    font-size: 1.5em;
+    font-size: 1.3em;
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
 }
 
 .journey-elder-wisdom-btn .label {
     font-weight: 600;
-    font-size: 0.9em;
+    font-size: 0.85em;
     display: block;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
 }
 
 .journey-elder-wisdom-btn .desc {
-    font-size: 0.75em;
+    font-size: 0.7em;
     color: var(--text-muted);
 }
 
-/* Elder Chat */
+/* Elder Chat - MAIN FOCUS */
+.journey-elder-chat-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 .journey-elder-chat-section h4 {
-    margin: 15px 0 10px;
-    font-size: 1em;
+    margin: 0 0 8px;
+    font-size: 0.95em;
+    display: none; /* Hide title on mobile to save space */
 }
 
 .journey-elder-chat-container {
@@ -4556,15 +4713,21 @@
     border-radius: 10px;
     overflow: hidden;
     background: var(--background-primary);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 300px;
 }
 
 .journey-elder-messages {
-    height: 250px;
+    flex: 1;
+    min-height: 200px;
+    max-height: calc(100vh - 350px);
     overflow-y: auto;
-    padding: 15px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
 
 .journey-elder-welcome {
@@ -7071,6 +7234,29 @@
     box-shadow: 0 4px 12px rgba(127, 140, 141, 0.3);
 }
 
+.journey-boss-delete-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.journey-boss-delete-btn:hover {
+    background: #e74c3c;
+    color: white;
+    border-color: #e74c3c;
+}
+
 .journey-boss-quest-hint {
     font-size: 0.85em;
     color: var(--text-muted);
@@ -7620,4 +7806,1123 @@
     font-size: 0.75em;
     color: #e74c3c;
     font-weight: 600;
+}
+
+/* Quick Add button on template */
+.rpg-boss-template-add-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--interactive-accent);
+    color: white;
+    font-size: 1.4em;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.rpg-boss-template-add-btn:hover {
+    transform: scale(1.1);
+    background: var(--interactive-accent-hover);
+}
+
+.rpg-boss-template-add-btn:active {
+    transform: scale(0.95);
+}
+
+/* ============================================
+   MOBILE OPTIMIZATION
+   Obsidian mobile classes: .is-mobile, .is-phone, .is-tablet
+   ============================================ */
+
+/* Mobile CSS Variables */
+.is-mobile .the-journey-container {
+    --journey-touch-target: 44px;
+    --journey-mobile-padding: 12px;
+    --journey-mobile-gap: 12px;
+    --journey-mobile-font-size: 16px;
+    --journey-mobile-btn-padding: 12px 16px;
+}
+
+/* ---- CONTAINER & LAYOUT ---- */
+.is-mobile .the-journey-container {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 10px;
+    gap: 6px;
+    font-size: var(--journey-mobile-font-size);
+    height: 100%;
+    overflow: hidden;
+}
+
+.is-phone .the-journey-container {
+    padding: 6px 8px;
+    gap: 4px;
+}
+
+/* Header and stats - fixed at top, don't scroll */
+.is-mobile .journey-header {
+    flex-shrink: 0;
+}
+
+.is-mobile .journey-stat-box {
+    flex-shrink: 0;
+}
+
+/* Tab navigation - fixed, don't scroll */
+.is-mobile .journey-tab-nav {
+    flex-shrink: 0;
+}
+
+/* Tab content - this is the scrollable area */
+.is-mobile .journey-tab-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 20px;
+}
+
+/* ---- HEADER & PROFILE (Compact for phone) ---- */
+.is-mobile .journey-header {
+    padding-bottom: 8px;
+}
+
+.is-mobile .journey-avatar {
+    width: 50px;
+    height: 50px;
+    font-size: 28px;
+    margin-bottom: 2px;
+}
+
+.is-phone .journey-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 24px;
+}
+
+.is-mobile .journey-profile h2 {
+    font-size: 1.1em;
+    margin: 2px 0;
+}
+
+.is-phone .journey-profile h2 {
+    font-size: 1em;
+}
+
+.is-mobile .journey-level-badge {
+    font-size: 0.75em;
+    padding: 2px 8px;
+}
+
+.is-mobile .journey-human-tier-badge {
+    font-size: 0.7em;
+    padding: 2px 8px;
+    margin-top: 2px;
+}
+
+/* ---- STAT BARS (Compact for phone) ---- */
+.is-mobile .journey-stat-box {
+    padding: 8px 10px;
+    font-size: 0.85em;
+}
+
+.is-phone .journey-stat-box {
+    padding: 6px 8px;
+    font-size: 0.8em;
+}
+
+.is-mobile .journey-bar-bg {
+    height: 10px;
+    border-radius: 5px;
+    margin-top: 3px;
+    margin-bottom: 6px;
+}
+
+.is-phone .journey-bar-bg {
+    height: 8px;
+    border-radius: 4px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.is-mobile .journey-gold {
+    font-size: 0.95em;
+    margin-top: 2px;
+}
+
+/* ---- TAB NAVIGATION (Compact for phone) ---- */
+/* Note: flex-shrink: 0 is set in CONTAINER section above */
+.is-mobile .journey-tab-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: 6px 0;
+    margin-bottom: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+}
+
+.is-mobile .journey-tab-nav::-webkit-scrollbar {
+    display: none;
+}
+
+.is-mobile .journey-tab-btn {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 0.85em;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.is-phone .journey-tab-btn {
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 0.8em;
+}
+
+/* ---- BUTTONS (Touch-friendly) ---- */
+.is-mobile .journey-btn,
+.is-mobile .journey-actions button,
+.is-mobile .journey-modal-buttons button {
+    min-height: var(--journey-touch-target);
+    padding: var(--journey-mobile-btn-padding);
+    font-size: 1em;
+    touch-action: manipulation;
+}
+
+.is-mobile .journey-mini-btn {
+    min-height: 40px;
+    min-width: 40px;
+    padding: 8px 12px;
+    font-size: 0.9em;
+}
+
+.is-mobile .journey-bad-habit-btn {
+    min-height: 48px;
+    padding: 14px 20px;
+    font-size: 1.05em;
+}
+
+/* ---- LIST ITEMS ---- */
+.is-mobile .journey-list-item {
+    padding: 14px;
+    gap: 12px;
+    min-height: 56px;
+}
+
+.is-mobile .journey-list-item input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+}
+
+.is-mobile .journey-item-info {
+    font-size: 1em;
+}
+
+.is-mobile .journey-item-name {
+    font-size: 1em;
+}
+
+.is-mobile .journey-item-meta {
+    font-size: 0.9em;
+}
+
+/* ---- FORM INPUTS ---- */
+.is-mobile .journey-name-input,
+.is-mobile .journey-ai-input,
+.is-mobile input[type="text"],
+.is-mobile input[type="number"],
+.is-mobile textarea,
+.is-mobile select {
+    min-height: var(--journey-touch-target);
+    padding: 12px 14px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+}
+
+.is-mobile .journey-ai-input-container {
+    padding: 10px;
+    gap: 10px;
+}
+
+.is-mobile .journey-ai-input {
+    padding: 12px 16px;
+    font-size: 16px;
+}
+
+/* ---- SKILLS GRID ---- */
+.is-mobile .journey-skills-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.is-phone .journey-skills-grid {
+    grid-template-columns: 1fr;
+}
+
+.is-mobile .journey-skill-item {
+    padding: 12px;
+}
+
+.is-mobile .journey-skill-header {
+    font-size: 0.9em;
+}
+
+/* ---- ANALYSIS GRID ---- */
+.is-mobile .journey-analysis-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.is-phone .journey-analysis-grid {
+    grid-template-columns: 1fr;
+}
+
+/* ---- FOUR QUADRANTS (Vertical Stack for Phone) ---- */
+.is-mobile .journey-quadrants-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.is-mobile .journey-quadrant-card {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.is-mobile .journey-quadrant-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.is-mobile .journey-quadrant-icon {
+    font-size: 1.3em;
+}
+
+.is-mobile .journey-quadrant-name {
+    font-size: 1em;
+    font-weight: 600;
+}
+
+.is-mobile .journey-quadrant-score {
+    font-size: 0.9em;
+    margin-left: auto;
+    font-weight: 600;
+}
+
+.is-mobile .journey-quadrant-bar-container {
+    height: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+/* Subdomain items in quadrant - full width vertical list */
+.is-mobile .journey-quadrant-domains {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.is-mobile .journey-quadrant-domain-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 10px;
+    background: var(--background-primary);
+    border-radius: 6px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.is-mobile .journey-domain-icon-small,
+.is-mobile .journey-qd-icon {
+    font-size: 1em;
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+}
+
+.is-mobile .journey-domain-name-small,
+.is-mobile .journey-qd-name {
+    flex: 1;
+    font-size: 0.9em;
+    line-height: 1.3;
+    min-width: 0;
+}
+
+.is-phone .journey-domain-name-small,
+.is-phone .journey-qd-name {
+    font-size: 0.85em;
+}
+
+/* Domain progress bar on mobile */
+.is-mobile .journey-domain-bar-small,
+.is-mobile .journey-qd-bar {
+    width: 60px;
+    height: 6px;
+    flex-shrink: 0;
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.is-mobile .journey-domain-score-small,
+.is-mobile .journey-qd-score {
+    font-size: 0.85em;
+    min-width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+    font-weight: 500;
+}
+
+/* ---- DISCOVERY QUESTION & LIKERT EMOJI OPTIONS ---- */
+.is-mobile .journey-discovery-question {
+    padding: 16px;
+}
+
+.is-mobile .journey-discovery-question h4 {
+    font-size: 1em;
+}
+
+.is-mobile .journey-discovery-question-text {
+    font-size: 1em;
+    line-height: 1.4;
+}
+
+/* Likert scale emoji buttons - mobile optimized */
+.is-mobile .journey-likert-container {
+    gap: 6px;
+    justify-content: space-between;
+}
+
+.is-mobile .journey-likert-btn {
+    min-width: unset;
+    max-width: unset;
+    flex: 1;
+    padding: 10px 6px;
+    min-height: 70px;
+}
+
+.is-phone .journey-likert-btn {
+    padding: 8px 4px;
+    min-height: 65px;
+}
+
+.is-mobile .journey-likert-emoji {
+    font-size: 1.8em;
+}
+
+.is-phone .journey-likert-emoji {
+    font-size: 1.5em;
+}
+
+.is-mobile .journey-likert-value {
+    font-size: 0.8em;
+}
+
+.is-mobile .journey-likert-label {
+    font-size: 0.6em;
+    display: none; /* Hide labels on mobile to save space */
+}
+
+/* Discovery likert specific */
+.is-mobile .journey-discovery-likert {
+    gap: 6px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+}
+
+.is-mobile .journey-discovery-likert .journey-likert-btn {
+    flex: 1;
+    min-width: unset;
+    padding: 12px 8px;
+    font-size: 1.8em;
+}
+
+.is-phone .journey-discovery-likert .journey-likert-btn {
+    padding: 10px 6px;
+    font-size: 1.5em;
+}
+
+.is-mobile .journey-discovery-likert .journey-likert-value {
+    font-size: 0.45em;
+    margin-top: 6px;
+}
+
+/* ---- ELDER/AI CHAT - Mobile Optimized ---- */
+.is-mobile .journey-elder-container {
+    padding: 8px;
+}
+
+/* Compact header row on mobile */
+.is-mobile .journey-elder-header-row {
+    padding: 6px 10px;
+    margin-bottom: 8px;
+}
+
+.is-phone .journey-elder-header-row {
+    gap: 6px;
+}
+
+.is-phone .journey-elder-name-mini {
+    max-width: 80px;
+    font-size: 0.85em;
+}
+
+/* Mode toggle on phone - keep text */
+.is-phone .journey-mode-btn {
+    padding: 4px 8px;
+    font-size: 0.75em;
+}
+
+/* Quick actions 1x4 grid on mobile */
+.is-mobile .journey-elder-quick-actions {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 4px 0 6px;
+    margin-bottom: 4px;
+}
+
+.is-phone .journey-elder-quick-btn {
+    padding: 6px 3px;
+    gap: 2px;
+}
+
+.is-phone .journey-elder-quick-btn .icon {
+    font-size: 1em;
+}
+
+.is-phone .journey-elder-quick-btn .label {
+    font-size: 0.7em;
+}
+
+/* Compact greeting on mobile */
+.is-mobile .journey-elder-greeting.compact .journey-elder-speech-bubble {
+    padding: 6px 10px;
+}
+
+.is-phone .journey-elder-greeting.compact .journey-elder-speech-bubble p {
+    font-size: 0.75em;
+}
+
+/* Chat takes most of the space on mobile */
+.is-mobile .journey-elder-chat-section {
+    flex: 1;
+}
+
+.is-mobile .journey-elder-chat-container {
+    min-height: 350px;
+}
+
+.is-phone .journey-elder-chat-container {
+    min-height: calc(100vh - 280px);
+}
+
+.is-mobile .journey-elder-messages {
+    min-height: 250px;
+    max-height: calc(100vh - 320px);
+    padding: 10px;
+}
+
+.is-phone .journey-elder-messages {
+    min-height: 300px;
+    max-height: calc(100vh - 280px);
+}
+
+.is-mobile .journey-elder-welcome {
+    padding: 20px 10px;
+    font-size: 0.9em;
+}
+
+/* Legacy wisdom grid - keep for offline mode */
+.is-mobile .journey-elder-wisdom-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.is-phone .journey-elder-wisdom-grid {
+    grid-template-columns: 1fr;
+}
+
+/* Input section compact on mobile */
+.is-mobile .journey-elder-input-section {
+    padding: 10px;
+}
+
+.is-mobile .journey-elder-input {
+    padding: 8px 12px;
+    font-size: 1em;
+}
+
+.is-mobile .journey-elder-send-btn {
+    width: 38px;
+    height: 38px;
+}
+
+.is-mobile .journey-elder-action-btns {
+    margin-top: 8px;
+    gap: 8px;
+}
+
+/* Message styling on mobile */
+.is-mobile .journey-elder-message {
+    max-width: 85%;
+}
+
+.is-mobile .journey-elder-msg-content {
+    padding: 8px 12px;
+    font-size: 0.9em;
+}
+
+.is-mobile .journey-elder-msg-avatar {
+    width: 26px;
+    height: 26px;
+    font-size: 0.85em;
+}
+
+.is-mobile .journey-ai-message {
+    padding: 14px;
+    font-size: 1em;
+    line-height: 1.5;
+}
+
+.is-mobile .journey-ai-messages {
+    padding: 12px;
+}
+
+/* ---- BOSS FIGHTS ---- */
+/* Boss template container - make visible on mobile */
+.is-mobile .rpg-boss-template-container {
+    max-height: none;
+    overflow-y: visible;
+    margin-bottom: 12px;
+}
+
+.is-mobile .rpg-modal-hint {
+    font-size: 0.9em;
+    margin-bottom: 16px;
+}
+
+.is-mobile .rpg-boss-category {
+    margin-bottom: 12px;
+}
+
+.is-mobile .rpg-boss-category-header {
+    font-size: 0.9em;
+    padding: 10px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.is-mobile .rpg-boss-template-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.is-mobile .rpg-boss-template {
+    padding: 14px;
+    gap: 12px;
+}
+
+.is-phone .rpg-boss-template {
+    padding: 12px;
+    gap: 10px;
+}
+
+.is-mobile .rpg-boss-template-icon {
+    font-size: 1.8em;
+}
+
+.is-phone .rpg-boss-template-icon {
+    font-size: 1.5em;
+}
+
+.is-mobile .rpg-boss-template-name {
+    font-size: 0.95em;
+}
+
+.is-mobile .rpg-boss-template-desc {
+    font-size: 0.75em;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Quick add button on mobile */
+.is-mobile .rpg-boss-template-add-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 1.5em;
+}
+
+.is-phone .rpg-boss-template-add-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 1.3em;
+}
+
+.is-mobile .rpg-boss-card {
+    padding: 16px;
+}
+
+.is-mobile .rpg-boss-actions {
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.is-mobile .rpg-boss-actions button {
+    min-height: 48px;
+    padding: 12px 20px;
+    font-size: 1em;
+    flex: 1;
+    min-width: 100px;
+}
+
+/* ---- QUEST ITEMS ---- */
+.is-mobile .journey-quest-item {
+    padding: 14px;
+}
+
+.is-mobile .journey-quest-actions {
+    gap: 8px;
+}
+
+.is-mobile .journey-quest-actions button {
+    min-height: 40px;
+    padding: 8px 14px;
+}
+
+/* ---- MODALS ---- */
+/* Obsidian modal on mobile */
+.is-mobile .modal {
+    padding: 10px;
+}
+
+.is-mobile .modal-content {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 90vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.is-phone .modal-content {
+    max-height: 85vh;
+    padding: 16px;
+}
+
+.is-mobile .journey-modal-content {
+    padding: 16px;
+    max-height: none;
+    overflow-y: visible;
+}
+
+.is-mobile .journey-modal-buttons {
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+    position: sticky;
+    bottom: 0;
+    background: var(--background-primary);
+    padding: 12px 0;
+}
+
+.is-mobile .journey-modal-buttons button {
+    width: 100%;
+}
+
+/* ---- ASSESSMENT QUESTIONS ---- */
+.is-mobile .journey-question {
+    padding: 16px;
+}
+
+.is-mobile .journey-question-text {
+    font-size: 1.05em;
+    line-height: 1.5;
+}
+
+.is-mobile .journey-question-options {
+    gap: 10px;
+}
+
+.is-mobile .journey-question-option {
+    min-height: var(--journey-touch-target);
+    padding: 14px 16px;
+    font-size: 1em;
+}
+
+/* ---- REST & RECOVERY (Compact for phone) ---- */
+
+/* Question headers */
+.is-mobile .journey-mood-question,
+.is-mobile .journey-sleep-question {
+    margin-bottom: 12px;
+}
+
+.is-mobile .journey-mood-question h4,
+.is-mobile .journey-sleep-question h4 {
+    font-size: 0.9em;
+    margin-bottom: 8px;
+}
+
+.is-phone .journey-mood-question h4,
+.is-phone .journey-sleep-question h4 {
+    font-size: 0.85em;
+    margin-bottom: 6px;
+}
+
+/* Mood buttons - "How are you feeling right now?" */
+.is-mobile .journey-mood-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+.is-mobile .journey-mood-btn,
+.is-mobile .journey-mood-grid .journey-mood-btn {
+    flex: 1;
+    min-width: 0;
+    min-height: 60px;
+    padding: 8px 4px;
+    font-size: 1.6em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.is-phone .journey-mood-btn,
+.is-phone .journey-mood-grid .journey-mood-btn {
+    min-height: 56px;
+    padding: 6px 4px;
+    font-size: 1.5em;
+    gap: 3px;
+}
+
+.is-mobile .journey-mood-icon {
+    font-size: 1.5em;
+    margin-bottom: 2px;
+}
+
+.is-phone .journey-mood-icon {
+    font-size: 1.3em;
+}
+
+.is-mobile .journey-mood-label,
+.is-mobile .journey-mood-btn .mood-label,
+.is-mobile .journey-mood-grid .journey-mood-btn span:last-child {
+    font-size: 0.5em;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.is-phone .journey-mood-label {
+    font-size: 0.45em;
+}
+
+/* Large mood buttons */
+.is-mobile .journey-mood-btn-large {
+    padding: 8px 4px;
+    min-height: 60px;
+    gap: 4px;
+}
+
+.is-phone .journey-mood-btn-large {
+    padding: 6px 4px;
+    min-height: 56px;
+    gap: 3px;
+}
+
+.is-mobile .journey-mood-btn-large .mood-icon {
+    font-size: 1.5em;
+}
+
+.is-phone .journey-mood-btn-large .mood-icon {
+    font-size: 1.3em;
+}
+
+.is-mobile .journey-mood-btn-large .mood-label {
+    font-size: 0.5em;
+}
+
+.is-phone .journey-mood-btn-large .mood-label {
+    font-size: 0.45em;
+}
+
+/* Expanded mood grid (5 columns) */
+.is-mobile .journey-mood-grid-expanded {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+}
+
+.is-phone .journey-mood-grid-expanded {
+    gap: 6px;
+}
+
+/* Sleep buttons - "How did you sleep last night?" */
+.is-mobile .journey-sleep-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+}
+
+.is-mobile .journey-sleep-btn {
+    flex: 1;
+    min-width: 0;
+    min-height: 56px;
+    padding: 6px 4px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    text-align: center;
+}
+
+.is-phone .journey-sleep-btn {
+    min-height: 50px;
+    padding: 4px 2px;
+}
+
+.is-mobile .journey-sleep-btn .sleep-icon {
+    font-size: 1.3em;
+    min-width: unset;
+}
+
+.is-phone .journey-sleep-btn .sleep-icon {
+    font-size: 1.1em;
+}
+
+.is-mobile .journey-sleep-btn .sleep-label {
+    font-size: 0.65em;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.is-phone .journey-sleep-btn .sleep-label {
+    font-size: 0.6em;
+}
+
+/* Recovery Actions */
+.is-mobile .journey-inn-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.is-mobile .journey-inn-card {
+    padding: 10px 8px;
+}
+
+.is-mobile .journey-inn-name {
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.is-mobile .journey-inn-desc {
+    font-size: 0.7em;
+    margin-bottom: 6px;
+    display: none; /* Hide description on mobile to save space */
+}
+
+.is-mobile .journey-inn-stats {
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 0.8em;
+}
+
+.is-mobile .journey-inn-btn {
+    padding: 6px;
+    font-size: 0.85em;
+}
+
+/* Mini mood grid (in Rest section) */
+.is-mobile .journey-inn-mini-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.is-mobile .journey-inn-mini-grid .journey-mood-btn {
+    padding: 8px 4px;
+    font-size: 1.2em;
+}
+
+.is-phone .journey-inn-mini-grid .journey-mood-btn {
+    padding: 6px 2px;
+    font-size: 1em;
+}
+
+/* Rest options */
+.is-mobile .journey-rest-options {
+    gap: 6px;
+}
+
+.is-mobile .journey-rest-option {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 0.9em;
+}
+
+/* ---- CHRONICLE/ACTIVITY LOG ---- */
+.is-mobile .journey-chronicle-item {
+    padding: 14px;
+    font-size: 0.95em;
+}
+
+.is-mobile .journey-chronicle-filters {
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.is-mobile .journey-chronicle-filters button {
+    min-height: 40px;
+    padding: 8px 14px;
+}
+
+/* ---- SHOP ITEMS ---- */
+.is-mobile .journey-shop-item {
+    padding: 14px;
+    gap: 12px;
+}
+
+.is-mobile .journey-shop-item button {
+    min-height: var(--journey-touch-target);
+    padding: 10px 16px;
+}
+
+/* ---- SETTINGS ---- */
+.is-mobile .journey-settings-section {
+    padding: 16px;
+}
+
+.is-mobile .journey-settings-section label {
+    font-size: 1em;
+    margin-bottom: 8px;
+}
+
+.is-mobile .journey-settings-section input,
+.is-mobile .journey-settings-section select,
+.is-mobile .journey-settings-section textarea {
+    padding: 12px;
+    font-size: 16px;
+}
+
+/* ---- GENERAL MOBILE RESPONSIVE ---- */
+@media (max-width: 480px) {
+    .the-journey-container {
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .journey-tab-nav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .journey-tab-nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .journey-tab-btn {
+        flex-shrink: 0;
+        padding: 10px 14px;
+        font-size: 0.85em;
+    }
+
+    .journey-skills-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .journey-analysis-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .journey-elder-wisdom-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rpg-boss-template-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .journey-modal-buttons {
+        flex-direction: column;
+    }
+
+    .journey-modal-buttons button {
+        width: 100%;
+    }
+}
+
+/* ---- PREVENT ZOOM ON INPUT FOCUS (iOS) ---- */
+@supports (-webkit-touch-callout: none) {
+    .is-mobile input[type="text"],
+    .is-mobile input[type="number"],
+    .is-mobile input[type="email"],
+    .is-mobile input[type="password"],
+    .is-mobile textarea,
+    .is-mobile select {
+        font-size: 16px !important;
+    }
+}
+
+/* ---- TOUCH FEEDBACK ---- */
+.is-mobile .journey-btn:active,
+.is-mobile .journey-tab-btn:active,
+.is-mobile .journey-mini-btn:active,
+.is-mobile .journey-list-item:active,
+.is-mobile .rpg-boss-template:active {
+    transform: scale(0.98);
+    opacity: 0.9;
+}
+
+/* Disable hover effects on touch devices */
+@media (hover: none) {
+    .journey-list-item:hover {
+        background: var(--background-secondary);
+    }
+
+    .journey-tab-btn:hover {
+        background: var(--background-secondary);
+    }
+
+    .journey-btn:hover {
+        transform: none;
+    }
+
+    .rpg-boss-template:hover {
+        transform: none;
+        box-shadow: none;
+    }
+}
+
+/* ---- SAFE AREA INSETS (iPhone notch/home indicator) ---- */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .is-mobile .the-journey-container {
+        padding-bottom: calc(var(--journey-mobile-padding) + env(safe-area-inset-bottom));
+    }
+
+    .is-mobile .journey-ai-input-container {
+        padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    }
 }

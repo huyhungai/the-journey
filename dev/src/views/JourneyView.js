@@ -775,6 +775,25 @@ class JourneyView extends ItemView {
                     this.render();
                 };
 
+                // Delete Boss Button
+                const deleteBtn = actionRow.createEl('button', {
+                    text: '🗑️',
+                    cls: 'journey-boss-delete-btn',
+                    attr: { title: 'Remove this boss' }
+                });
+                deleteBtn.onclick = async () => {
+                    if (confirm(`Remove "${boss.name}"? This cannot be undone.`)) {
+                        const index = s.bossFights.findIndex(b => b.id === boss.id);
+                        if (index > -1) {
+                            s.bossFights.splice(index, 1);
+                            await this.plugin.saveSettings();
+                            this.plugin.logActivity('boss_deleted', `Removed boss: ${boss.name}`);
+                            new Notice(`🗑️ ${boss.name} has been removed`);
+                            this.render();
+                        }
+                    }
+                };
+
                 // Count related quests
                 const bossQuests = (s.quests || []).filter(q => !q.completed && q.bossId === boss.id);
                 if (bossQuests.length > 0) {
@@ -1057,7 +1076,8 @@ Rewards by difficulty:
 
 Only output the JSON array, no other text.`;
 
-        const response = await aiService.chat(prompt, false, false);
+        // Don't save system operations to Elder chat history
+        const response = await aiService.chat(prompt, false, false, false);
 
         // Parse JSON from response
         try {
@@ -1071,7 +1091,7 @@ Only output the JSON array, no other text.`;
             const quests = JSON.parse(jsonStr.trim());
 
             // Map bossId to actual boss and ensure rewards
-            return quests.map(q => {
+            const mappedQuests = quests.map(q => {
                 const boss = bosses.find(b => b.name === q.bossName || b.id === q.bossId);
                 const difficulty = q.difficulty || 'medium';
                 return {
@@ -1085,6 +1105,14 @@ Only output the JSON array, no other text.`;
                     isAI: true
                 };
             });
+
+            // Log to Chronicle
+            this.plugin.logActivity('quest_generated', `Generated ${mappedQuests.length} AI quest ideas`, {
+                questCount: mappedQuests.length,
+                bosses: bosses.map(b => b.name).join(', ')
+            });
+
+            return mappedQuests;
         } catch (parseError) {
             console.error('Failed to parse AI quest response:', parseError);
             throw new Error('Could not parse AI response');
@@ -1575,15 +1603,21 @@ Only output the JSON array, no other text.`;
         const modeConfig = ELDER_MODES[this.elderMode] || ELDER_MODES.guide;
         const persona = ai.elderPersona || DEFAULT_AI_SETTINGS.elderPersona;
 
-        // Mode Toggle at top
-        const modeToggle = container.createDiv({ cls: 'journey-elder-mode-toggle' });
+        // Compact Header Row: Avatar + Name + Mode Toggle + Status + Settings
+        const headerRow = container.createDiv({ cls: 'journey-elder-header-row' });
+
+        // Left side: Avatar + Name (compact)
+        const headerLeft = headerRow.createDiv({ cls: 'journey-elder-header-left' });
+        headerLeft.innerHTML = `
+            <span class="journey-elder-avatar-mini">🧙</span>
+            <span class="journey-elder-name-mini">${this.elderMode === 'storyteller' ? 'Storyteller' : persona.name}</span>
+        `;
+
+        // Center: Mode Toggle with text labels
+        const modeToggle = headerRow.createDiv({ cls: 'journey-elder-mode-toggle' });
         modeToggle.innerHTML = `
-            <button class="journey-mode-btn ${this.elderMode === 'guide' ? 'active' : ''}" data-mode="guide">
-                🔮 Guide
-            </button>
-            <button class="journey-mode-btn ${this.elderMode === 'storyteller' ? 'active' : ''}" data-mode="storyteller">
-                📖 Storyteller
-            </button>
+            <button class="journey-mode-btn ${this.elderMode === 'guide' ? 'active' : ''}" data-mode="guide">🔮 Guide</button>
+            <button class="journey-mode-btn ${this.elderMode === 'storyteller' ? 'active' : ''}" data-mode="storyteller">📖 Story</button>
         `;
 
         modeToggle.querySelectorAll('.journey-mode-btn').forEach(btn => {
@@ -1593,53 +1627,37 @@ Only output the JSON array, no other text.`;
             };
         });
 
-        // Elder Header
-        const elderHeader = container.createDiv({ cls: 'journey-elder-header' });
-        elderHeader.innerHTML = `
-            <div class="journey-elder-avatar">🧙</div>
-            <div class="journey-elder-info">
-                <h3 class="journey-elder-name">${this.elderMode === 'storyteller' ? 'The Elder' : persona.name}</h3>
-                <span class="journey-elder-title">${modeConfig.title}</span>
-            </div>
+        // Right side: Status + Settings
+        const headerRight = headerRow.createDiv({ cls: 'journey-elder-header-right' });
+        headerRight.innerHTML = `
+            <span class="journey-elder-status-dot ${hasApiKey ? 'connected' : 'offline'}" title="${hasApiKey ? 'Connected' : 'Offline'}"></span>
             <button class="journey-elder-settings-btn" title="Customize Elder">⚙️</button>
         `;
 
-        elderHeader.querySelector('.journey-elder-settings-btn').onclick = () => {
+        headerRight.querySelector('.journey-elder-settings-btn').onclick = () => {
             new ElderSettingsModal(this.app, this.plugin, () => this.render()).open();
         };
-
-        // Connection Status
-        const statusBadge = container.createDiv({ cls: `journey-elder-status ${hasApiKey ? 'connected' : 'offline'}` });
-        statusBadge.innerHTML = hasApiKey
-            ? '✨ <span>Connected to the Ethereal Realm</span>'
-            : '📜 <span>Wisdom from Ancient Scrolls</span>';
 
         if (!hasApiKey) {
             this.renderElderOfflineMode(container, persona, modeConfig);
             return;
         }
 
-        // Elder's Greeting
-        const greetingBox = container.createDiv({ cls: 'journey-elder-greeting' });
+        // Compact Greeting
+        const greetingBox = container.createDiv({ cls: 'journey-elder-greeting compact' });
         greetingBox.innerHTML = `
             <div class="journey-elder-speech-bubble">
                 <p>"${modeConfig.greeting}"</p>
             </div>
         `;
 
-        // Quick Actions based on mode
-        const wisdomSection = container.createDiv({ cls: 'journey-elder-wisdom-section' });
-        wisdomSection.createEl('h4', { text: this.elderMode === 'storyteller' ? '📖 Storyteller Actions' : '🌟 Seek Wisdom' });
-
-        const wisdomGrid = wisdomSection.createDiv({ cls: 'journey-elder-wisdom-grid' });
+        // Quick Actions as 1x4 horizontal row
+        const quickActionsRow = container.createDiv({ cls: 'journey-elder-quick-actions' });
 
         modeConfig.actions.forEach(action => {
-            const btn = wisdomGrid.createDiv({ cls: 'journey-elder-wisdom-btn' });
-            btn.innerHTML = `
-                <span class="icon">${action.icon}</span>
-                <span class="label">${action.label}</span>
-                <span class="desc">${action.desc}</span>
-            `;
+            const btn = quickActionsRow.createDiv({ cls: 'journey-elder-quick-btn' });
+            btn.innerHTML = `<span class="icon">${action.icon}</span><span class="label">${action.label}</span>`;
+            btn.title = action.desc;
             btn.onclick = async () => {
                 const prompt = this.elderMode === 'storyteller'
                     ? this.getStorytellerPrompt(action.id)
@@ -1648,7 +1666,7 @@ Only output the JSON array, no other text.`;
             };
         });
 
-        // Chat Container
+        // Chat Container - Main Focus
         this.renderElderChat(container);
     }
 
@@ -1810,14 +1828,16 @@ Only output the JSON array, no other text.`;
 
             // Use storyteller system prompt if in storyteller mode
             const useStoryteller = this.elderMode === 'storyteller';
-            const response = await aiService.chat(enhancedMessage, true, useStoryteller);
+            const response = await aiService.chat(enhancedMessage, true, useStoryteller, true);
 
             if (isQuickAction) {
+                // Quick actions: save to Elder chat (display message + response)
                 this.aiChatMessages.push(
                     { role: 'user', content: displayMessage || 'I seek your wisdom...' },
                     { role: 'assistant', content: response }
                 );
             } else {
+                // Regular conversations: add to chat display
                 this.aiChatMessages.push({ role: 'assistant', content: response });
             }
 
@@ -1834,6 +1854,24 @@ Only output the JSON array, no other text.`;
 
         this.isAiLoading = false;
         this.render();
+    }
+
+    showElderResponseModal(title, content) {
+        const modal = new Modal(this.app);
+        modal.titleEl.setText(`📜 ${title}`);
+
+        const contentEl = modal.contentEl.createDiv({ cls: 'journey-elder-modal-content' });
+
+        // Render markdown content
+        const responseDiv = contentEl.createDiv({ cls: 'journey-elder-response' });
+        MarkdownRenderer.renderMarkdown(content, responseDiv, '', this.plugin);
+
+        // Close button
+        const btnRow = contentEl.createDiv({ cls: 'journey-modal-buttons' });
+        const closeBtn = btnRow.createEl('button', { text: 'Close', cls: 'mod-cta' });
+        closeBtn.onclick = () => modal.close();
+
+        modal.open();
     }
 
     renderDailyTip(container) {
