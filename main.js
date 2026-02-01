@@ -2887,20 +2887,8 @@ Only output the JSON array, no other text.`;
         const modeConfig = ELDER_MODES[this.elderMode] || ELDER_MODES.guide;
         const persona = ai.elderPersona || DEFAULT_AI_SETTINGS.elderPersona;
 
-        // Compact Header Row: Avatar + Name + Mode Toggle + Status + Settings
-        const headerRow = container.createDiv({ cls: 'journey-elder-header-row' });
-
-        // Left side: Avatar + Name (different icons for each mode)
-        const elderIcon = this.elderMode === 'storyteller' ? '📖' : '🧙';
-        const elderName = this.elderMode === 'storyteller' ? 'Storyteller' : 'The Elder';
-        const headerLeft = headerRow.createDiv({ cls: 'journey-elder-header-left' });
-        headerLeft.innerHTML = `
-            <span class="journey-elder-avatar-mini">${elderIcon}</span>
-            <span class="journey-elder-name-mini">${elderName}</span>
-        `;
-
-        // Center: Mode Toggle with text labels
-        const modeToggle = headerRow.createDiv({ cls: 'journey-elder-mode-toggle' });
+        // Row 1: Mode Toggle (centered)
+        const modeToggle = container.createDiv({ cls: 'journey-elder-mode-toggle' });
         modeToggle.innerHTML = `
             <button class="journey-mode-btn ${this.elderMode === 'guide' ? 'active' : ''}" data-mode="guide">🔮 Guide</button>
             <button class="journey-mode-btn ${this.elderMode === 'storyteller' ? 'active' : ''}" data-mode="storyteller">📖 Storytelling</button>
@@ -2912,6 +2900,18 @@ Only output the JSON array, no other text.`;
                 this.render();
             };
         });
+
+        // Row 2: Avatar + Name + Status + Settings
+        const headerRow = container.createDiv({ cls: 'journey-elder-header-row' });
+
+        // Left side: Avatar + Name (different icons for each mode)
+        const elderIcon = this.elderMode === 'storyteller' ? '📖' : '🧙';
+        const elderName = this.elderMode === 'storyteller' ? 'The Storyteller' : 'The Elder';
+        const headerLeft = headerRow.createDiv({ cls: 'journey-elder-header-left' });
+        headerLeft.innerHTML = `
+            <span class="journey-elder-avatar-mini">${elderIcon}</span>
+            <span class="journey-elder-name-mini">${elderName}</span>
+        `;
 
         // Right side: Status + Settings
         const headerRight = headerRow.createDiv({ cls: 'journey-elder-header-right' });
