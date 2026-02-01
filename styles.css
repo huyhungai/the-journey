@@ -3753,9 +3753,9 @@
 }
 
 .rpg-elder-tab-content {
-    max-height: 500px;
+    max-height: 60vh;
     overflow-y: auto;
-    padding-right: 10px;
+    padding: 15px 10px 15px 0;
 }
 
 .rpg-elder-tab-content h3 {
@@ -3767,6 +3767,77 @@
     margin-top: 15px;
     margin-bottom: 8px;
     font-size: 1em;
+}
+
+/* Clean Elder Settings Layout */
+.rpg-inline-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 12px;
+}
+
+.rpg-inline-row .rpg-input-group {
+    flex: 1;
+}
+
+.rpg-input-group {
+    margin-bottom: 15px;
+}
+
+.rpg-input-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.rpg-input-group input,
+.rpg-input-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    font-size: 0.9em;
+    box-sizing: border-box;
+}
+
+.rpg-input-group input:focus,
+.rpg-input-group textarea:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.rpg-input-hint {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
+
+.rpg-system-prompt {
+    font-family: var(--font-monospace);
+    font-size: 0.85em !important;
+    line-height: 1.5;
+    min-height: 250px;
+}
+
+/* Mobile Elder Settings */
+.is-mobile .rpg-elder-tab-content {
+    max-height: 55vh;
+}
+
+.is-mobile .rpg-inline-row {
+    flex-direction: column;
+    gap: 0;
+}
+
+.is-mobile .rpg-input-group input,
+.is-mobile .rpg-input-group textarea {
+    font-size: 16px; /* Prevent iOS zoom */
+}
+
+.is-mobile .rpg-system-prompt {
+    min-height: 200px;
 }
 
 /* Legacy class support */

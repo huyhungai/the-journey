@@ -3366,6 +3366,29 @@ const DEFAULT_AI_SETTINGS = {
     elderMemoryEnabled: true,
     elderMemoryCount: 3,
 
+    // Simplified System Prompts (new - user editable)
+    guideSystemPrompt: `You are a wise guide walking alongside the traveler. You help them see their own inner wisdom.
+
+Your approach:
+- Inspire, don't instruct
+- Validate struggles before offering perspective
+- Use "we" to stand alongside them
+- Reframe challenges as growth opportunities
+- Keep responses concise but profound (2-3 paragraphs)
+- Address them as "traveler" or "friend"
+- End with hope or a reflective question`,
+
+    storytellerSystemPrompt: `You are an epic storyteller who transforms daily life into legendary tales.
+
+Your approach:
+- Every life is an epic waiting to be recognized
+- The mundane contains the magical - reveal it
+- Struggles are chapters that make heroes
+- Daily activities become sacred rituals
+- Small victories become turning points
+- Use rich, evocative but concise language
+- Celebrate their journey with wonder`,
+
     // Elder Core Configuration (editable in settings)
     elderCoreIdentity: `You are not a guru on a podium. You are a wise friend walking alongside the traveler. Your philosophy: "Nothing you don't already know" - you point to their inner wisdom, not lecture from above.
 
@@ -5810,18 +5833,15 @@ class ElderSettingsModal extends Modal {
         if (!s.ai.elderPersona) s.ai.elderPersona = { ...DEFAULT_AI_SETTINGS.elderPersona };
         if (!s.ai.elderPrompts) s.ai.elderPrompts = { ...DEFAULT_AI_SETTINGS.elderPrompts };
 
-        contentEl.createEl('h2', { text: '🧙 Customize Your Elder' });
-        contentEl.createEl('p', {
-            text: 'Shape the personality and wisdom of your guide.',
-            cls: 'rpg-modal-subtitle'
-        });
+        // Header
+        contentEl.createEl('h2', { text: '🧙 Elder Settings' });
 
         // === TAB NAVIGATION ===
         const tabNav = contentEl.createDiv({ cls: 'rpg-elder-tabs' });
         const tabs = [
-            { id: 'general', label: '👤 General', icon: '👤' },
-            { id: 'guide', label: '🧭 Guide Mode', icon: '🧭' },
-            { id: 'storyteller', label: '📖 Storyteller', icon: '📖' }
+            { id: 'general', label: '👤 General' },
+            { id: 'guide', label: '🔮 Guide' },
+            { id: 'storyteller', label: '📖 Storyteller' }
         ];
 
         const tabContents = {};
@@ -5832,13 +5852,11 @@ class ElderSettingsModal extends Modal {
                 text: tab.label,
                 cls: `rpg-elder-tab ${tab.id === activeTab ? 'active' : ''}`
             });
-            tabBtn.dataset.tab = tab.id;
             tabBtn.onclick = () => {
                 tabNav.querySelectorAll('.rpg-elder-tab').forEach(t => t.classList.remove('active'));
                 tabBtn.classList.add('active');
                 Object.values(tabContents).forEach(c => c.style.display = 'none');
                 tabContents[tab.id].style.display = 'block';
-                activeTab = tab.id;
             };
         });
 
@@ -5846,210 +5864,116 @@ class ElderSettingsModal extends Modal {
         const generalContent = contentEl.createDiv({ cls: 'rpg-elder-tab-content' });
         tabContents['general'] = generalContent;
 
-        // Persona Section
-        const personaSection = generalContent.createDiv({ cls: 'rpg-settings-section' });
-        personaSection.createEl('h3', { text: '👤 Elder Identity' });
+        // Identity Row (Name + Title inline)
+        const identityRow = generalContent.createDiv({ cls: 'rpg-inline-row' });
 
-        const nameRow = personaSection.createDiv({ cls: 'rpg-setting-row' });
-        nameRow.createEl('label', { text: 'Name' });
-        const nameInput = nameRow.createEl('input', { type: 'text' });
+        const nameGroup = identityRow.createDiv({ cls: 'rpg-input-group' });
+        nameGroup.createEl('label', { text: 'Name' });
+        const nameInput = nameGroup.createEl('input', { type: 'text' });
         nameInput.value = s.ai.elderPersona.name;
         nameInput.placeholder = 'The Elder';
         nameInput.onchange = (e) => s.ai.elderPersona.name = e.target.value;
 
-        const titleRow = personaSection.createDiv({ cls: 'rpg-setting-row' });
-        titleRow.createEl('label', { text: 'Title' });
-        const titleInput = titleRow.createEl('input', { type: 'text' });
+        const titleGroup = identityRow.createDiv({ cls: 'rpg-input-group' });
+        titleGroup.createEl('label', { text: 'Title' });
+        const titleInput = titleGroup.createEl('input', { type: 'text' });
         titleInput.value = s.ai.elderPersona.title;
         titleInput.placeholder = 'Keeper of Wisdom';
         titleInput.onchange = (e) => s.ai.elderPersona.title = e.target.value;
 
-        const greetingRow = personaSection.createDiv({ cls: 'rpg-setting-row vertical' });
-        greetingRow.createEl('label', { text: 'Greeting Message' });
-        const greetingInput = greetingRow.createEl('textarea');
+        // Greeting
+        const greetingGroup = generalContent.createDiv({ cls: 'rpg-input-group' });
+        greetingGroup.createEl('label', { text: 'Greeting' });
+        const greetingInput = greetingGroup.createEl('input', { type: 'text' });
         greetingInput.value = s.ai.elderPersona.greeting;
         greetingInput.placeholder = 'Greetings, traveler...';
-        greetingInput.rows = 2;
         greetingInput.onchange = (e) => s.ai.elderPersona.greeting = e.target.value;
 
-        const personalityRow = personaSection.createDiv({ cls: 'rpg-setting-row' });
-        personalityRow.createEl('label', { text: 'Personality' });
-        const personalitySelect = personalityRow.createEl('select');
-        Object.entries(ELDER_PERSONALITIES).forEach(([id, preset]) => {
-            const option = personalitySelect.createEl('option', { value: id, text: preset.name });
-            if (id === s.ai.elderPersona.personality) option.selected = true;
-        });
+        // About You
+        const aboutGroup = generalContent.createDiv({ cls: 'rpg-input-group' });
+        aboutGroup.createEl('label', { text: 'About You (shared context)' });
+        const aboutInput = aboutGroup.createEl('textarea');
+        aboutInput.value = s.ai.customKnowledge || '';
+        aboutInput.placeholder = 'Tell the Elder about yourself...\nExample: I am a photographer looking for my first client';
+        aboutInput.rows = 3;
+        aboutInput.onchange = (e) => s.ai.customKnowledge = e.target.value;
 
-        const previewBox = personaSection.createDiv({ cls: 'rpg-personality-preview' });
-        const updatePreview = () => {
-            const preset = ELDER_PERSONALITIES[personalitySelect.value];
-            previewBox.innerHTML = `
-                <div class="rpg-preview-title">${preset.name}</div>
-                <div class="rpg-preview-style">${preset.style}</div>
-                <div class="rpg-preview-tone"><em>${preset.tone}</em></div>
-            `;
-        };
-        updatePreview();
-        personalitySelect.onchange = (e) => {
-            s.ai.elderPersona.personality = e.target.value;
-            updatePreview();
-        };
-
-        // Personal Knowledge (shared)
-        const knowledgeSection = generalContent.createDiv({ cls: 'rpg-settings-section' });
-        knowledgeSection.createEl('h3', { text: '📚 Personal Knowledge (Shared)' });
-        knowledgeSection.createEl('p', {
-            text: 'Context about yourself that both Guide and Storyteller modes will know.',
-            cls: 'rpg-setting-desc'
-        });
-        const knowledgeInput = knowledgeSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        knowledgeInput.value = s.ai.customKnowledge || '';
-        knowledgeInput.placeholder = 'Example:\n- I am a photographer transitioning careers\n- My main goal is to find my first client by end of month';
-        knowledgeInput.rows = 4;
-        knowledgeInput.onchange = (e) => s.ai.customKnowledge = e.target.value;
-
-        // Knowledge Base (shared)
-        const knowledgeBaseSection = generalContent.createDiv({ cls: 'rpg-settings-section' });
-        knowledgeBaseSection.createEl('h3', { text: '📖 Knowledge Base (Shared)' });
-        knowledgeBaseSection.createEl('p', {
-            text: 'The framework both modes use. Leave empty for default HUMAN 3.0 framework.',
-            cls: 'rpg-setting-desc'
-        });
-        const knowledgeBaseInput = knowledgeBaseSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        knowledgeBaseInput.value = s.ai.elderKnowledgeBase || '';
-        knowledgeBaseInput.placeholder = 'Leave empty to use default HUMAN 3.0 framework...';
-        knowledgeBaseInput.rows = 6;
-        knowledgeBaseInput.onchange = (e) => s.ai.elderKnowledgeBase = e.target.value;
-
-        // === GUIDE MODE TAB ===
+        // === GUIDE TAB ===
         const guideContent = contentEl.createDiv({ cls: 'rpg-elder-tab-content' });
         guideContent.style.display = 'none';
         tabContents['guide'] = guideContent;
 
-        guideContent.createEl('h3', { text: '🧭 Guide Mode Settings' });
-        guideContent.createEl('p', {
-            text: 'Guide Mode provides wisdom and coaching using the Den Heijer inspirational style.',
-            cls: 'rpg-setting-desc'
+        // System Prompt
+        const guidePromptGroup = guideContent.createDiv({ cls: 'rpg-input-group' });
+        guidePromptGroup.createEl('label', { text: 'Guide System Prompt' });
+        guidePromptGroup.createEl('p', {
+            text: 'Define how the Guide thinks, speaks, and provides wisdom.',
+            cls: 'rpg-input-hint'
         });
+        const guidePromptInput = guidePromptGroup.createEl('textarea', { cls: 'rpg-system-prompt' });
+        guidePromptInput.value = s.ai.guideSystemPrompt || DEFAULT_AI_SETTINGS.guideSystemPrompt || '';
+        guidePromptInput.placeholder = `You are a wise guide who helps travelers on their journey...
 
-        // Core Identity
-        const identitySection = guideContent.createDiv({ cls: 'rpg-settings-section' });
-        identitySection.createEl('h4', { text: '🧬 Core Identity' });
-        identitySection.createEl('p', { text: 'The Guide\'s philosophy and principles.', cls: 'rpg-setting-desc' });
-        const identityInput = identitySection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        identityInput.value = s.ai.elderCoreIdentity || DEFAULT_AI_SETTINGS.elderCoreIdentity;
-        identityInput.rows = 6;
-        identityInput.onchange = (e) => s.ai.elderCoreIdentity = e.target.value;
+Your role:
+- Provide thoughtful guidance and wisdom
+- Ask reflective questions
+- Use metaphors from nature and journeys
 
-        // Communication Style
-        const styleSection = guideContent.createDiv({ cls: 'rpg-settings-section' });
-        styleSection.createEl('h4', { text: '💬 Communication Style' });
-        styleSection.createEl('p', { text: 'How the Guide speaks - techniques, metaphors, response format.', cls: 'rpg-setting-desc' });
-        const styleInput = styleSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        styleInput.value = s.ai.elderCommunicationStyle || DEFAULT_AI_SETTINGS.elderCommunicationStyle;
-        styleInput.rows = 10;
-        styleInput.onchange = (e) => s.ai.elderCommunicationStyle = e.target.value;
-
-        // Custom Instructions
-        const instructionsSection = guideContent.createDiv({ cls: 'rpg-settings-section' });
-        instructionsSection.createEl('h4', { text: '📜 Additional Instructions' });
-        const instructionsInput = instructionsSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        instructionsInput.value = s.ai.customSystemPrompt || '';
-        instructionsInput.placeholder = 'Extra instructions for Guide mode...';
-        instructionsInput.rows = 3;
-        instructionsInput.onchange = (e) => s.ai.customSystemPrompt = e.target.value;
-
-        // Quick Prompts
-        const promptsSection = guideContent.createDiv({ cls: 'rpg-settings-section' });
-        promptsSection.createEl('h4', { text: '⚡ Quick Wisdom Prompts' });
-        const prompts = [
-            { id: 'guidance', label: '🔮 Guidance', default: DEFAULT_AI_SETTINGS.elderPrompts.guidance },
-            { id: 'challenge', label: '⚔️ Challenge', default: DEFAULT_AI_SETTINGS.elderPrompts.challenge },
-            { id: 'reflection', label: '🪞 Reflection', default: DEFAULT_AI_SETTINGS.elderPrompts.reflection },
-            { id: 'motivation', label: '🔥 Motivation', default: DEFAULT_AI_SETTINGS.elderPrompts.motivation }
-        ];
-        prompts.forEach(prompt => {
-            const promptRow = promptsSection.createDiv({ cls: 'rpg-setting-row vertical' });
-            promptRow.createEl('label', { text: prompt.label });
-            const promptInput = promptRow.createEl('textarea');
-            promptInput.value = s.ai.elderPrompts[prompt.id] || prompt.default;
-            promptInput.placeholder = prompt.default;
-            promptInput.rows = 2;
-            promptInput.onchange = (e) => s.ai.elderPrompts[prompt.id] = e.target.value;
-        });
+Your tone:
+- Warm but not preachy
+- Honest and direct
+- Encouraging growth`;
+        guidePromptInput.rows = 12;
+        guidePromptInput.onchange = (e) => s.ai.guideSystemPrompt = e.target.value;
 
         // === STORYTELLER TAB ===
         const storytellerContent = contentEl.createDiv({ cls: 'rpg-elder-tab-content' });
         storytellerContent.style.display = 'none';
         tabContents['storyteller'] = storytellerContent;
 
-        storytellerContent.createEl('h3', { text: '📖 Storyteller Mode Settings' });
-        storytellerContent.createEl('p', {
-            text: 'Storyteller Mode narrates your journey as an epic tale.',
-            cls: 'rpg-setting-desc'
+        // System Prompt
+        const stPromptGroup = storytellerContent.createDiv({ cls: 'rpg-input-group' });
+        stPromptGroup.createEl('label', { text: 'Storyteller System Prompt' });
+        stPromptGroup.createEl('p', {
+            text: 'Define how the Storyteller narrates your journey.',
+            cls: 'rpg-input-hint'
         });
+        const stPromptInput = stPromptGroup.createEl('textarea', { cls: 'rpg-system-prompt' });
+        stPromptInput.value = s.ai.storytellerSystemPrompt || DEFAULT_AI_SETTINGS.storytellerSystemPrompt || '';
+        stPromptInput.placeholder = `You are an epic storyteller who transforms daily life into legendary tales...
 
-        // Storyteller Role
-        const roleSection = storytellerContent.createDiv({ cls: 'rpg-settings-section' });
-        roleSection.createEl('h4', { text: '🎭 Storyteller Role' });
-        roleSection.createEl('p', { text: 'What the Storyteller does and how they transform your journey.', cls: 'rpg-setting-desc' });
-        const roleInput = roleSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        roleInput.value = s.ai.storytellerRole || DEFAULT_AI_SETTINGS.storytellerRole;
-        roleInput.rows = 5;
-        roleInput.onchange = (e) => s.ai.storytellerRole = e.target.value;
+Your role:
+- Narrate the user's journey as an epic adventure
+- Transform mundane activities into heroic moments
+- Find meaning and growth in their experiences
 
-        // Storyteller Style
-        const stStyleSection = storytellerContent.createDiv({ cls: 'rpg-settings-section' });
-        stStyleSection.createEl('h4', { text: '✨ Narrative Style' });
-        stStyleSection.createEl('p', { text: 'How the Storyteller writes and speaks.', cls: 'rpg-setting-desc' });
-        const stStyleInput = stStyleSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        stStyleInput.value = s.ai.storytellerStyle || DEFAULT_AI_SETTINGS.storytellerStyle;
-        stStyleInput.rows = 8;
-        stStyleInput.onchange = (e) => s.ai.storytellerStyle = e.target.value;
-
-        // Storyteller Examples
-        const examplesSection = storytellerContent.createDiv({ cls: 'rpg-settings-section' });
-        examplesSection.createEl('h4', { text: '📝 Example Narratives' });
-        examplesSection.createEl('p', { text: 'Examples of how to narrate different actions.', cls: 'rpg-setting-desc' });
-        const examplesInput = examplesSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        examplesInput.value = s.ai.storytellerExamples || DEFAULT_AI_SETTINGS.storytellerExamples;
-        examplesInput.rows = 8;
-        examplesInput.onchange = (e) => s.ai.storytellerExamples = e.target.value;
-
-        // Storyteller Principles
-        const principlesSection = storytellerContent.createDiv({ cls: 'rpg-settings-section' });
-        principlesSection.createEl('h4', { text: '⚖️ Guiding Principles' });
-        principlesSection.createEl('p', { text: 'Rules the Storyteller follows.', cls: 'rpg-setting-desc' });
-        const principlesInput = principlesSection.createEl('textarea', { cls: 'rpg-large-textarea' });
-        principlesInput.value = s.ai.storytellerPrinciples || DEFAULT_AI_SETTINGS.storytellerPrinciples;
-        principlesInput.rows = 5;
-        principlesInput.onchange = (e) => s.ai.storytellerPrinciples = e.target.value;
+Your style:
+- Rich, evocative language
+- Epic fantasy tone
+- Celebrate small victories as heroic deeds`;
+        stPromptInput.rows = 12;
+        stPromptInput.onchange = (e) => s.ai.storytellerSystemPrompt = e.target.value;
 
         // === BUTTONS ===
         const buttonRow = contentEl.createDiv({ cls: 'rpg-modal-buttons' });
 
         const resetBtn = buttonRow.createEl('button', {
-            text: '🔄 Reset to Defaults',
+            text: '🔄 Reset',
             cls: 'rpg-btn secondary'
         });
         resetBtn.onclick = async () => {
-            s.ai.elderPersona = { ...DEFAULT_AI_SETTINGS.elderPersona };
-            s.ai.elderPrompts = { ...DEFAULT_AI_SETTINGS.elderPrompts };
-            s.ai.customKnowledge = '';
-            s.ai.customSystemPrompt = '';
-            s.ai.elderCoreIdentity = DEFAULT_AI_SETTINGS.elderCoreIdentity;
-            s.ai.elderCommunicationStyle = DEFAULT_AI_SETTINGS.elderCommunicationStyle;
-            s.ai.elderKnowledgeBase = '';
-            s.ai.storytellerRole = DEFAULT_AI_SETTINGS.storytellerRole;
-            s.ai.storytellerStyle = DEFAULT_AI_SETTINGS.storytellerStyle;
-            s.ai.storytellerExamples = DEFAULT_AI_SETTINGS.storytellerExamples;
-            s.ai.storytellerPrinciples = DEFAULT_AI_SETTINGS.storytellerPrinciples;
-            await this.plugin.saveSettings();
-            this.onOpen(); // Re-render
+            if (confirm('Reset all Elder settings to defaults?')) {
+                s.ai.elderPersona = { ...DEFAULT_AI_SETTINGS.elderPersona };
+                s.ai.customKnowledge = '';
+                s.ai.guideSystemPrompt = '';
+                s.ai.storytellerSystemPrompt = '';
+                await this.plugin.saveSettings();
+                this.onOpen();
+            }
         };
 
         const saveBtn = buttonRow.createEl('button', {
-            text: '💾 Save Changes',
+            text: '💾 Save',
             cls: 'rpg-btn primary'
         });
         saveBtn.onclick = async () => {
