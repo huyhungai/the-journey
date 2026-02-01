@@ -8291,13 +8291,14 @@
     gap: 6px;
 }
 
-/* Hide elder name on phone to save space */
+/* Elder name visible on phone */
 .is-phone .journey-elder-name-mini {
-    display: none;
+    font-size: 0.8em;
+    max-width: 80px;
 }
 
 .is-phone .journey-elder-avatar-mini {
-    font-size: 1.5em;
+    font-size: 1.1em;
 }
 
 /* Mode toggle on phone - keep text readable */

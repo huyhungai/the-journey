@@ -2890,18 +2890,20 @@ Only output the JSON array, no other text.`;
         // Compact Header Row: Avatar + Name + Mode Toggle + Status + Settings
         const headerRow = container.createDiv({ cls: 'journey-elder-header-row' });
 
-        // Left side: Avatar + Name (compact)
+        // Left side: Avatar + Name (different icons for each mode)
+        const elderIcon = this.elderMode === 'storyteller' ? '📖' : '🧙';
+        const elderName = this.elderMode === 'storyteller' ? 'Storyteller' : 'The Elder';
         const headerLeft = headerRow.createDiv({ cls: 'journey-elder-header-left' });
         headerLeft.innerHTML = `
-            <span class="journey-elder-avatar-mini">🧙</span>
-            <span class="journey-elder-name-mini">${this.elderMode === 'storyteller' ? 'Storyteller' : persona.name}</span>
+            <span class="journey-elder-avatar-mini">${elderIcon}</span>
+            <span class="journey-elder-name-mini">${elderName}</span>
         `;
 
         // Center: Mode Toggle with text labels
         const modeToggle = headerRow.createDiv({ cls: 'journey-elder-mode-toggle' });
         modeToggle.innerHTML = `
             <button class="journey-mode-btn ${this.elderMode === 'guide' ? 'active' : ''}" data-mode="guide">🔮 Guide</button>
-            <button class="journey-mode-btn ${this.elderMode === 'storyteller' ? 'active' : ''}" data-mode="storyteller">📖 Story</button>
+            <button class="journey-mode-btn ${this.elderMode === 'storyteller' ? 'active' : ''}" data-mode="storyteller">📖 Storytelling</button>
         `;
 
         modeToggle.querySelectorAll('.journey-mode-btn').forEach(btn => {
